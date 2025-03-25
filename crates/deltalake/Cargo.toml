@@ -58,3 +58,6 @@ required-features = ["datafusion"]
 
 [[example]]
 name = "recordbatch-writer"
+
+[profile.dev]
+debug = true

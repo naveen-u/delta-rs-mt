@@ -106,10 +106,13 @@ impl PartialEq for DeltaTableConfig {
 }
 
 /// builder for configuring a delta table load.
-#[derive(Debug)]
+// #[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DeltaTableBuilder {
     /// table root uri
     table_uri: String,
+    // Table root uri original file string
+    table_uri_orig: Option<String>,
     /// backend to access storage system
     storage_backend: Option<(Arc<DynObjectStore>, Url)>,
     /// specify the version we are going to load: a time stamp, a version, or just the newest
@@ -160,6 +163,7 @@ impl DeltaTableBuilder {
 
         Ok(Self {
             table_uri: url.into(),
+            table_uri_orig: Some(table_uri.as_ref().to_string()),
             storage_backend: None,
             version: DeltaVersion::default(),
             storage_options: None,
@@ -317,9 +321,14 @@ impl DeltaTableBuilder {
     }
 
     /// Build the [`DeltaTable`] and load its state
-    pub async fn load(self) -> DeltaResult<DeltaTable> {
+    pub async fn load(&mut self) -> DeltaResult<DeltaTable> {
         let version = self.version;
-        let mut table = self.build()?;
+        println!("{}", self.table_uri);
+        let mut builder = self.clone();
+        builder.table_uri_orig = Some(builder.table_uri.clone());
+    
+        let mut table = builder.build()?;
+        // println!("{}", self.table_uri.as_ref());
         match version {
             DeltaVersion::Newest => table.load().await?,
             DeltaVersion::Version(v) => table.load_version(v).await?,
@@ -421,7 +430,7 @@ pub fn ensure_table_uri(table_uri: impl AsRef<str>) -> DeltaResult<Url> {
 fn ensure_file_location_exists(path: PathBuf) -> DeltaResult<()> {
     if !path.exists() {
         let msg = format!(
-            "Local path \"{}\" does not exist or you don't have access!",
+            "Local path \"{}\" does not exist or you don't have aaccess!",
             path.as_path().display(),
         );
         return Err(DeltaTableError::InvalidTableLocation(msg));

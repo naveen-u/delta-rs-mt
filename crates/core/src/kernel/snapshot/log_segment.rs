@@ -86,12 +86,24 @@ impl LogSegment {
     ///
     /// This will list the entire log directory and find all relevant files for the given table version.
     pub async fn try_new(
-        table_root: &Path,
-        version: Option<i64>,
-        store: &dyn ObjectStore,
+        table_root: &Path, // root directory of the Delta table (e.g. s3://bucket/path/to/table)
+        version: Option<i64>, // optional — if provided, load that exact version
+        store: &dyn ObjectStore, // backend file system abstraction (S3, local, etc.)
     ) -> DeltaResult<Self> {
-        let log_url = table_root.child("_delta_log");
+
+        let log_url = table_root.child("_delta_log"); // s3://bucket/path/to/table/_delta_log/
+        // let log_url: Path = if has_tgroup {
+        //     tgroup_object_store
+        // } else {
+        //     table_root.child("_delta_log")
+        // };
+        
+
+        // let log_url = tgroup_object_store;
+        
         let maybe_cp = read_last_checkpoint(store, &log_url).await?;
+
+        // add an if else for tgroups based on
 
         // List relevant files from log
         let (mut commit_files, checkpoint_files) = match (maybe_cp, version) {
@@ -396,6 +408,8 @@ struct CheckpointMetadata {
     /// The version of the table when the last checkpoint was made.
     #[allow(unreachable_pub)] // used by acceptance tests (TODO make an fn accessor?)
     pub version: i64,
+    pub tgroup_uri: Option<String>, 
+    ///stores tgroup file path
     /// The number of actions that are stored in the checkpoint.
     pub(crate) size: i64,
     /// The number of fragments if the last checkpoint was written in multiple parts.

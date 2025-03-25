@@ -363,6 +363,7 @@ impl DeltaTable {
 
     /// Load DeltaTable with data from latest checkpoint
     pub async fn load(&mut self) -> Result<(), DeltaTableError> {
+        
         self.update_incremental(None).await
     }
 
