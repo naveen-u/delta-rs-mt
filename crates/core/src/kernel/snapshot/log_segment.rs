@@ -21,6 +21,11 @@ use crate::logstore::LogStore;
 use crate::operations::transaction::CommitData;
 use crate::{DeltaResult, DeltaTableConfig, DeltaTableError};
 
+use url::Url;
+use crate::table::builder::ensure_table_uri;
+use crate::logstore::logstore_for;
+use crate::storage::StorageOptions;
+
 const LAST_CHECKPOINT_FILE_NAME: &str = "_last_checkpoint";
 
 static CHECKPOINT_FILE_PATTERN: LazyLock<Regex> =
@@ -92,26 +97,93 @@ impl LogSegment {
     ) -> DeltaResult<Self> {
 
         let log_url = table_root.child("_delta_log"); // s3://bucket/path/to/table/_delta_log/
-        // let log_url: Path = if has_tgroup {
-        //     tgroup_object_store
-        // } else {
-        //     table_root.child("_delta_log")
-        // };
-        
-
-        // let log_url = tgroup_object_store;
         
         let maybe_cp = read_last_checkpoint(store, &log_url).await?;
 
-        // add an if else for tgroups based on
-
         // List relevant files from log
-        let (mut commit_files, checkpoint_files) = match (maybe_cp, version) {
+        let (mut commit_files, checkpoint_files, tgroup_uri) = match (maybe_cp, version) {
             (Some(cp), None) => list_log_files_with_checkpoint(&cp, store, &log_url).await?,
             (Some(cp), Some(v)) if cp.version <= v => {
                 list_log_files_with_checkpoint(&cp, store, &log_url).await?
             }
             _ => list_log_files(store, &log_url, version, None).await?,
+        };
+
+        println!("tgroup_uri: {:?}", tgroup_uri);
+
+        if let Some(ref uri) = tgroup_uri {
+            // Call tgrouup function to handle tgroup
+            // let tgroup_path = Path::from(uri.as_str());
+            return LogSegment::try_new_tgroup(uri, version, store).await;
+        } else {
+            // Continue with current logic (no-op or fallthrough)
+            // remove all files above requested version
+            if let Some(version) = version {
+                commit_files.retain(|meta| meta.location.commit_version() <= Some(version));
+            }
+
+            let mut segment = Self {
+                version: 0,
+                commit_files: commit_files.into(),
+                checkpoint_files,
+            };
+            if segment.commit_files.is_empty() && segment.checkpoint_files.is_empty() {
+                return Err(DeltaTableError::NotATable("no log files".into()));
+            }
+            // get the effective version from chosen files
+            let version_eff = segment.file_version().ok_or(DeltaTableError::Generic(
+                "failed to get effective version".into(),
+            ))?; // TODO: A more descriptive error
+            segment.version = version_eff;
+            segment.validate()?;
+
+            if let Some(v) = version {
+                if version_eff != v {
+                    // TODO more descriptive error
+                    return Err(DeltaTableError::Generic("missing version".into()));
+                }
+            }
+
+            Ok(segment)
+        }
+    }
+
+    pub async fn try_new_tgroup(
+        tgroup_uri: &str, // full path for tgroup logs /home/gnilay/si330v2/delta/delta-rs-mt/crates/test/tests/data/_tgroup_delta_log
+        version: Option<i64>, // optional — if provided, load that exact version
+        store: &dyn ObjectStore, // backend file system abstraction (S3, local, etc.)
+    ) -> DeltaResult<Self> {
+
+        // let uri_str = format!("file://{}", table_root.to_string());
+        // let tgroup_url = Url::parse(&uri_str)
+        // .map_err(|e| DeltaTableError::Generic(format!("Invalid tgroup_uri: {e}")))?;
+        let uri_str = format!("file://{}/_delta_log", tgroup_uri.trim_end_matches('/'));
+        println!("tgroup_uri1: {}", uri_str);
+        let tgroup_url = ensure_table_uri(&uri_str)?; // uses the builder.rs util for consistency
+
+        // Get a new object store for the tgroup path
+        let tgroup_logstore = logstore_for(
+            tgroup_url.clone(),
+            StorageOptions::default(), // you can pass in options if needed
+            None,
+        )?;
+
+        let store = tgroup_logstore.object_store(None);
+        let table_path = object_store::path::Path::from(tgroup_url.path());
+
+
+        let log_url = &table_path;//.child(""); // s3://bucket/path/to/table/_delta_log/
+        // println!("tgroup_uri2: {:?}", tgroup_uri);
+        
+        let maybe_cp = read_last_checkpoint(store.as_ref(), &log_url).await?;
+
+        // List relevant files from log
+        let (mut commit_files, checkpoint_files, tgroup_url) = match (maybe_cp, version) {
+            (Some(cp), None) => list_log_files_with_checkpoint(&cp, store.as_ref(), &log_url).await?,
+            (Some(cp), Some(v)) if cp.version <= v => {
+                list_log_files_with_checkpoint(&cp, store.as_ref(), &log_url).await?
+            }
+            _ => list_log_files(store.as_ref(), &log_url, version, None).await?,
         };
 
         // remove all files above requested version
@@ -143,7 +215,6 @@ impl LogSegment {
 
         Ok(segment)
     }
-
     /// Try to create a new [`LogSegment`] from a slice of the log.
     ///
     /// This will create a new [`LogSegment`] from the log with all relevant log files
@@ -157,7 +228,7 @@ impl LogSegment {
         debug!("try_new_slice: start_version: {start_version}, end_version: {end_version:?}",);
         log_store.refresh().await?;
         let log_url = table_root.child("_delta_log");
-        let (mut commit_files, checkpoint_files) = list_log_files(
+        let (mut commit_files, checkpoint_files, tgroup_uri) = list_log_files(
             log_store.object_store(None).as_ref(),
             &log_url,
             end_version,
@@ -424,6 +495,15 @@ struct CheckpointMetadata {
     pub(crate) checksum: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct TGroup {
+    #[serde(rename = "tgroupUri")]
+    pub tgroup_uri: String,
+    pub timestamp: Option<i64>,
+    pub redirectState: Option<String>,
+}
+
+
 /// Try reading the `_last_checkpoint` file.
 ///
 /// In case the file is not found, `None` is returned.
@@ -447,7 +527,7 @@ async fn list_log_files_with_checkpoint(
     cp: &CheckpointMetadata,
     fs_client: &dyn ObjectStore,
     log_root: &Path,
-) -> DeltaResult<(Vec<ObjectMeta>, Vec<ObjectMeta>)> {
+) -> DeltaResult<(Vec<ObjectMeta>, Vec<ObjectMeta>, Option<String>)> {
     let version_prefix = format!("{:020}", cp.version);
     let start_from = log_root.child(version_prefix.as_str());
 
@@ -474,6 +554,27 @@ async fn list_log_files_with_checkpoint(
     // NOTE: this will sort in reverse order
     commit_files.sort_unstable_by(|a, b| b.location.cmp(&a.location));
 
+    let mut tgroup_uri: Option<String> = None;
+
+    // Try reading tgroupUri from the first commit file
+    if let Some(first_commit) = commit_files.first() {
+        if let Ok(data) = fs_client.get(&first_commit.location).await {
+            let bytes = data.bytes().await?;
+            for line in bytes.split(|b| *b == b'\n') {
+                if let Ok(json_value) = serde_json::from_slice::<serde_json::Value>(line) {
+                    if let Some(tgroup_obj) = json_value.get("tGroup") {
+                        if let Some(uri) = tgroup_obj.get("tgroupUri").and_then(|v| v.as_str()) {
+                            tgroup_uri = Some(uri.to_string());
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+
+
     let checkpoint_files = files
         .iter()
         .filter_map(|f| {
@@ -493,7 +594,7 @@ async fn list_log_files_with_checkpoint(
         );
         Err(DeltaTableError::MetadataError(msg))
     } else {
-        Ok((commit_files, checkpoint_files))
+        Ok((commit_files, checkpoint_files, tgroup_uri))
     }
 }
 
@@ -505,7 +606,7 @@ pub(super) async fn list_log_files(
     log_root: &Path,
     max_version: Option<i64>,
     start_version: Option<i64>,
-) -> DeltaResult<(Vec<ObjectMeta>, Vec<ObjectMeta>)> {
+) -> DeltaResult<(Vec<ObjectMeta>, Vec<ObjectMeta>, Option<String>)> {
     let max_version = max_version.unwrap_or(i64::MAX - 1);
     let start_from = log_root.child(format!("{:020}", start_version.unwrap_or(0)).as_str());
 
@@ -544,7 +645,7 @@ pub(super) async fn list_log_files(
     // NOTE this will sort in reverse order
     commit_files.sort_unstable_by(|a, b| b.location.cmp(&a.location));
 
-    Ok((commit_files, checkpoint_files))
+    Ok((commit_files, checkpoint_files, None))
 }
 
 #[cfg(test)]
