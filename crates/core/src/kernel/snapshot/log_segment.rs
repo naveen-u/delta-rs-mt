@@ -15,6 +15,8 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 
+use object_store::memory::InMemory;
+
 use super::parse;
 use crate::kernel::{arrow::json, ActionType, Metadata, Protocol, Schema, StructType};
 use crate::logstore::LogStore;
@@ -114,7 +116,8 @@ impl LogSegment {
         if let Some(ref uri) = tgroup_uri {
             // Call tgrouup function to handle tgroup
             // let tgroup_path = Path::from(uri.as_str());
-            return LogSegment::try_new_tgroup(uri, version, store).await;
+            let dummy_store = Arc::new(InMemory::new()) as Arc<dyn ObjectStore>;
+            return LogSegment::try_new_tgroup(uri, version, dummy_store.as_ref()).await;
         } else {
             // Continue with current logic (no-op or fallthrough)
             // remove all files above requested version
@@ -157,7 +160,9 @@ impl LogSegment {
         // let uri_str = format!("file://{}", table_root.to_string());
         // let tgroup_url = Url::parse(&uri_str)
         // .map_err(|e| DeltaTableError::Generic(format!("Invalid tgroup_uri: {e}")))?;
-        let uri_str = format!("file://{}/_delta_log", tgroup_uri.trim_end_matches('/'));
+        let uri_str = format!("file://{}/", tgroup_uri.trim_end_matches('/'));
+        
+
         println!("tgroup_uri1: {}", uri_str);
         let tgroup_url = ensure_table_uri(&uri_str)?; // uses the builder.rs util for consistency
 
@@ -169,12 +174,21 @@ impl LogSegment {
         )?;
 
         let store = tgroup_logstore.object_store(None);
+
+        let uri_str = "memory:///_delta_log";
+        let tgroup_url = ensure_table_uri(uri_str)?;
+        
         let table_path = object_store::path::Path::from(tgroup_url.path());
 
 
         let log_url = &table_path;//.child(""); // s3://bucket/path/to/table/_delta_log/
         // println!("tgroup_uri2: {:?}", tgroup_uri);
+
+        // let uri_str = format!("file://{}/_delta_log", tgroup_uri.trim_end_matches('/'));
+        // let log_root_url = ensure_table_uri(&uri_str)?; 
         
+
+
         let maybe_cp = read_last_checkpoint(store.as_ref(), &log_url).await?;
 
         // List relevant files from log
@@ -511,6 +525,10 @@ async fn read_last_checkpoint(
     fs_client: &dyn ObjectStore,
     log_root: &Path,
 ) -> DeltaResult<Option<CheckpointMetadata>> {
+    // log_root is "_delta_log" for normal logs
+    // "home/gnilay/si330v2/delta/delta-rs-mt/crates/test/tests/data/_tgroup_delta_log/_delta_log" for tgroup logs
+    // "_delta_log/_last_checkpoint" for normal logs
+    // "home/gnilay/si330v2/delta/delta-rs-mt/crates/test/tests/data/_tgroup_delta_log/_delta_log/_last_checkpoint" for tgroup logs
     let file_path = log_root.child(LAST_CHECKPOINT_FILE_NAME);
     match fs_client.get(&file_path).await {
         Ok(data) => {
