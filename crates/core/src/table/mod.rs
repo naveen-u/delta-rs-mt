@@ -5,7 +5,9 @@ use std::cmp::{min, Ordering};
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Formatter;
+use std::sync::Arc;
 
+use builder::ensure_table_uri;
 use chrono::{DateTime, Utc};
 use futures::{StreamExt, TryStreamExt};
 use object_store::{path::Path, ObjectStore};
@@ -15,10 +17,11 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use self::builder::DeltaTableConfig;
 use self::state::DeltaTableState;
+use crate::kernel::log_segment::LogSegment;
 use crate::kernel::{
     CommitInfo, DataCheck, DataType, LogicalFile, Metadata, Protocol, StructType, Transaction,
 };
-use crate::logstore::{extract_version_from_filename, LogStoreConfig, LogStoreRef};
+use crate::logstore::{extract_version_from_filename, logstore_for, LogStoreConfig, LogStoreRef};
 use crate::partitions::PartitionFilter;
 use crate::storage::{commit_uri_from_version, ObjectStoreRef};
 use crate::{DeltaResult, DeltaTableError};
@@ -48,6 +51,9 @@ pub struct CheckPoint {
     #[serde(skip_serializing_if = "Option::is_none")]
     /// The number of AddFile actions in the checkpoint. This field is optional.
     pub(crate) num_of_add_files: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    /// TGroup URI of the table. This field is optional.
+    pub(crate) tgroup_uri: Option<String>,
 }
 
 #[derive(Default)]
@@ -63,6 +69,8 @@ pub struct CheckPointBuilder {
     pub(crate) size_in_bytes: Option<i64>,
     /// The number of AddFile actions in the checkpoint. This field is optional.
     pub(crate) num_of_add_files: Option<i64>,
+    /// The number of AddFile actions in the checkpoint. This field is optional.
+    pub(crate) tgroup_uri: Option<String>,
 }
 
 impl CheckPointBuilder {
@@ -75,6 +83,7 @@ impl CheckPointBuilder {
             parts: None,
             size_in_bytes: None,
             num_of_add_files: None,
+            tgroup_uri: None,
         }
     }
 
@@ -96,6 +105,11 @@ impl CheckPointBuilder {
         self
     }
 
+    pub fn with_tgroup_uri(mut self, tgroup_uri: &str) -> Self {
+        self.tgroup_uri = Some(String::from(tgroup_uri));
+        self
+    }
+
     /// Build the final [`CheckPoint`] struct.
     pub fn build(self) -> CheckPoint {
         CheckPoint {
@@ -104,6 +118,7 @@ impl CheckPointBuilder {
             parts: self.parts,
             size_in_bytes: self.size_in_bytes,
             num_of_add_files: self.num_of_add_files,
+            tgroup_uri: self.tgroup_uri,
         }
     }
 }
@@ -117,6 +132,7 @@ impl CheckPoint {
             parts: parts.or(None),
             size_in_bytes: None,
             num_of_add_files: None,
+            tgroup_uri: None,
         }
     }
 }
@@ -238,6 +254,10 @@ pub struct DeltaTable {
     pub config: DeltaTableConfig,
     /// log store
     pub(crate) log_store: LogStoreRef,
+    /// tGroup state as of the most recent loaded Delta log entry.
+    pub tgroup_log_segment: Option<LogSegment>,
+    /// tgroup log store
+    pub(crate) tgroup_log_store: Option<LogStoreRef>,
 }
 
 impl Serialize for DeltaTable {
@@ -291,6 +311,8 @@ impl<'de> Deserialize<'de> for DeltaTable {
                     state,
                     config,
                     log_store,
+                    tgroup_log_segment: None,
+                    tgroup_log_store: None,
                 };
                 Ok(table)
             }
@@ -310,6 +332,8 @@ impl DeltaTable {
             state: None,
             log_store,
             config,
+            tgroup_log_segment: None,
+            tgroup_log_store: None,
         }
     }
 
@@ -323,7 +347,33 @@ impl DeltaTable {
             state: Some(state),
             log_store,
             config: Default::default(),
+            tgroup_log_segment: None,
+            tgroup_log_store: None,
         }
+    }
+
+    pub async fn init_tgroup(&mut self, tgroup_uri: &str) -> Result<(), DeltaTableError> {
+        let uri_str = format!("file://{}/", tgroup_uri.trim_end_matches('/'));
+        let tgroup_url = ensure_table_uri(&uri_str).unwrap();
+        let tgroup_log_store = logstore_for(
+            tgroup_url,
+            self.log_store.config().options.clone(),
+            self.config.io_runtime.clone(),
+        )
+        .unwrap();
+        self.tgroup_log_store = Some(tgroup_log_store);
+        let tgroup_log_segment = LogSegment::try_new(
+            &Path::default(),
+            None,
+            self.tgroup_log_store
+                .as_ref()
+                .expect("Expected tgroup log store")
+                .object_store(None)
+                .as_ref(),
+        )
+        .await?;
+        self.tgroup_log_segment = Some(tgroup_log_segment);
+        Ok(())
     }
 
     /// get a shared reference to the delta object store
@@ -677,6 +727,7 @@ mod tests {
             parts: None,
             size_in_bytes: Some(1),
             num_of_add_files: Some(1),
+            tgroup_uri: None,
         };
 
         let checkpoint_json_serialized =
