@@ -9,7 +9,9 @@ pub mod arrow;
 pub mod error;
 pub mod models;
 pub mod scalars;
-mod snapshot;
+// mod snapshot;
+pub mod snapshot;
+
 
 pub use error::*;
 pub use models::*;

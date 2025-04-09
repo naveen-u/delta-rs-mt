@@ -5,14 +5,16 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use chrono::{DateTime, FixedOffset, Utc};
+use object_store::path::Path;
 use object_store::DynObjectStore;
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 use url::Url;
+use crate::kernel::snapshot::log_segment::list_log_files;
 
 use super::DeltaTable;
 use crate::errors::{DeltaResult, DeltaTableError};
-use crate::logstore::LogStoreRef;
+use crate::logstore::{logstore_for, LogStore, LogStoreRef};
 use crate::storage::{factories, IORuntime, StorageOptions};
 
 #[allow(dead_code)]
@@ -321,20 +323,72 @@ impl DeltaTableBuilder {
     }
 
     /// Build the [`DeltaTable`] and load its state
-    pub async fn load(&mut self) -> DeltaResult<DeltaTable> {
+    pub async fn load(&mut self) -> DeltaResult<(DeltaTable, Option<Arc<dyn LogStore>>)> {
+        let mut tgroup_store: Option<Arc<dyn LogStore>> = None;
         let version = self.version;
         println!("{}", self.table_uri);
         let mut builder = self.clone();
         builder.table_uri_orig = Some(builder.table_uri.clone());
     
         let mut table = builder.build()?;
+
+        let log_store = table.log_store();        
+
+        let log_path = &Path::default().child("_delta_log");
+
+        // Step 2: List log files using log_segment's function
+        let (commit_files, _checkpoint_files, _tgroup_uri) = crate::kernel::snapshot::log_segment::list_log_files(
+            log_store.object_store(None).as_ref(),
+            &log_path,
+            None,
+            None,
+        ).await?;
+
+        // Step 3: Read the last JSON commit file
+        if let Some(last_commit) = commit_files.first() {
+            let bytes = log_store.object_store(None).get(&last_commit.location).await?.bytes().await?;
+        
+            for (i, line) in bytes.split(|b| *b == b'\n').enumerate() {
+                // Print the raw line
+                // match std::str::from_utf8(line) {
+                //     Ok(utf8_line) => println!("Line {}: {}", i + 1, utf8_line),
+                //     Err(_) => println!("Line {}: [non-UTF8] {:?}", i + 1, line),
+                // }
+        
+                // Try parsing it
+                if let Ok(json_value) = serde_json::from_slice::<serde_json::Value>(line) {
+                    if let Some(tgroup_obj) = json_value.get("tGroup") {
+                        if let Some(uri) = tgroup_obj.get("tgroupUri").and_then(|v| v.as_str()) {
+                            println!("Extracted tgroupUri: {}", uri);
+
+                            let uri_str = format!("file://{}/", uri.trim_end_matches('/'));
+
+                            let tgroup_url = ensure_table_uri(&uri_str)?;
+
+                            let tgroup_logstore: Arc<dyn LogStore> = logstore_for(
+                                tgroup_url.clone(),
+                                StorageOptions::default(), // you can pass in options if needed
+                                None,
+                            )?;
+
+
+                            // let tgroup_store = tgroup_logstore.object_store(None);
+                            tgroup_store = Some(tgroup_logstore.clone());                            
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        
+
         // println!("{}", self.table_uri.as_ref());
         match version {
             DeltaVersion::Newest => table.load().await?,
             DeltaVersion::Version(v) => table.load_version(v).await?,
             DeltaVersion::Timestamp(ts) => table.load_with_datetime(ts).await?,
         }
-        Ok(table)
+        Ok((table, tgroup_store))
     }
 }
 

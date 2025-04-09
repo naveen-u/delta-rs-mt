@@ -619,7 +619,7 @@ async fn list_log_files_with_checkpoint(
 /// List relevant log files.
 ///
 /// Relevant files are the max checkpoint found and all subsequent commits.
-pub(super) async fn list_log_files(
+pub(crate) async fn list_log_files(
     fs_client: &dyn ObjectStore,
     log_root: &Path,
     max_version: Option<i64>,
