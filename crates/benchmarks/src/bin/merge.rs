@@ -20,6 +20,8 @@ use deltalake_core::{
     datafusion::prelude::{CsvReadOptions, SessionContext},
     delta_datafusion::{DeltaScanConfig, DeltaTableProvider},
     operations::merge::{MergeBuilder, MergeMetrics},
+    operations::delete::DeleteMetrics,
+    operations::update::UpdateMetrics,
     DeltaOps, DeltaTable, DeltaTableBuilder, DeltaTableError, ObjectStore, Path,
 };
 use serde_json::json;
@@ -279,6 +281,160 @@ async fn benchmark_merge_tpcds(
     Ok((duration, metrics))
 }
 
+/// Benchmark update operation on TPC-DS data.
+/// It updates a given column by multiplying its value and writes a log to the benchmarks table.
+async fn benchmark_update_tpcds(
+    path: String,
+    column: &str,
+    multiplier: f64,
+) -> Result<(core::time::Duration, UpdateMetrics), DataFusionError> {
+    let table = DeltaTableBuilder::from_uri(path.clone()).load().await?;
+    let start = Instant::now();
+    let (_table, metrics) = DeltaOps(table)
+        .update()
+        .with_predicate("wr_returned_date_sk IS NOT NULL")
+        // .with_updates(vec![(column, &format!("{column} * {multiplier}"))]
+        .with_update(column, format!("{column} * {multiplier}"))
+        .await?;
+    let end = Instant::now();
+
+    let duration = end.duration_since(start);
+
+    let schema = Arc::new(ArrowSchema::new(vec![
+        Field::new("group_id", DataType::Utf8, false),
+        Field::new("name", DataType::Utf8, false),
+        Field::new("sample", DataType::UInt32, false),
+        Field::new("duration_ms", DataType::UInt32, false),
+        Field::new("data", DataType::Utf8, true),
+    ]));
+
+    let batch = RecordBatch::try_new(
+        schema,
+        vec![
+            Arc::new(StringArray::from(vec!["update-log"])),
+            Arc::new(StringArray::from(vec![format!("update_{}_x{}", column, multiplier)])),
+            Arc::new(UInt32Array::from(vec![0])),
+            Arc::new(UInt32Array::from(vec![duration.as_millis() as u32])),
+            Arc::new(StringArray::from(vec![json!(metrics).to_string()])),
+        ],
+    )?;
+
+    DeltaOps::try_from_uri("data/benchmarks")
+        .await?
+        .write(vec![batch])
+        .with_save_mode(SaveMode::Append)
+        .await?;
+
+    Ok((duration, metrics))
+}
+
+/// Benchmark delete operation on TPC-DS data.
+/// It deletes rows where wr_net_loss exceeds a threshold and writes a log to the benchmarks table.
+async fn benchmark_delete_tpcds(
+    path: String,
+    threshold: f64,
+) -> Result<(core::time::Duration, DeleteMetrics), DataFusionError> {
+    let table = DeltaTableBuilder::from_uri(path.clone()).load().await?;
+    let start = Instant::now();
+    let (_table, metrics) = DeltaOps(table)
+        .delete()
+        .with_predicate(format!("wr_net_loss > {threshold}"))
+        .await?;
+    let end = Instant::now();
+
+    let duration = end.duration_since(start);
+
+    let schema = Arc::new(ArrowSchema::new(vec![
+        Field::new("group_id", DataType::Utf8, false),
+        Field::new("name", DataType::Utf8, false),
+        Field::new("sample", DataType::UInt32, false),
+        Field::new("duration_ms", DataType::UInt32, false),
+        Field::new("data", DataType::Utf8, true),
+    ]));
+
+    let batch = RecordBatch::try_new(
+        schema,
+        vec![
+            Arc::new(StringArray::from(vec!["delete-log"])),
+            Arc::new(StringArray::from(vec![format!("delete_net_loss_gt_{}", threshold)])),
+            Arc::new(UInt32Array::from(vec![0])),
+            Arc::new(UInt32Array::from(vec![duration.as_millis() as u32])),
+            Arc::new(StringArray::from(vec![json!(metrics).to_string()])),
+        ],
+    )?;
+
+    DeltaOps::try_from_uri("data/benchmarks")
+        .await?
+        .write(vec![batch])
+        .with_save_mode(SaveMode::Append)
+        .await?;
+
+    Ok((duration, metrics))
+}
+
+
+// Benchmark read-only operations on a Delta table.
+/// It loads the table, runs a simple SELECT query,
+/// measures the duration, counts the rows read, and logs the metrics.
+async fn benchmark_read_tpcds(
+    path: String,
+) -> Result<(core::time::Duration, ReadMetrics), DataFusionError> {
+    // Load the Delta table.
+    let table = DeltaTableBuilder::from_uri(path.clone()).load().await?;
+    let ctx = SessionContext::new();
+    ctx.register_table("t1", Arc::new(table))?;
+
+    // Execute a read-only query.
+    let start = Instant::now();
+    let df = ctx.sql("SELECT * FROM t1").await?;
+    let batches = df.collect().await?;
+    let end = Instant::now();
+    let duration = end.duration_since(start);
+
+    // Compute total number of rows.
+    let row_count: usize = batches.iter().map(|batch| batch.num_rows()).sum();
+    let metrics = ReadMetrics { row_count };
+
+    println!(
+        "Read Benchmark: Rows read: {row_count}, Duration: {} ms",
+        duration.as_millis()
+    );
+
+    // Log the metrics to the benchmarks table.
+    let schema = Arc::new(ArrowSchema::new(vec![
+        Field::new("group_id", DataType::Utf8, false),
+        Field::new("name", DataType::Utf8, false),
+        Field::new("sample", DataType::UInt32, false),
+        Field::new("duration_ms", DataType::UInt32, false),
+        Field::new("data", DataType::Utf8, true),
+    ]));
+
+    let group_id = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis()
+        .to_string();
+
+    let batch = RecordBatch::try_new(
+        schema,
+        vec![
+            Arc::new(StringArray::from(vec![group_id])),
+            Arc::new(StringArray::from(vec!["read-log".to_string()])),
+            Arc::new(UInt32Array::from(vec![0])),
+            Arc::new(UInt32Array::from(vec![duration.as_millis() as u32])),
+            Arc::new(StringArray::from(vec![json!(metrics).to_string()])),
+        ],
+    )?;
+
+    DeltaOps::try_from_uri("data/benchmarks")
+        .await?
+        .write(vec![batch])
+        .with_save_mode(SaveMode::Append)
+        .await?;
+
+    Ok((duration, metrics))
+}
+/// CLI command definitions
 #[derive(Subcommand, Debug)]
 enum Command {
     Convert(Convert),
@@ -286,6 +442,32 @@ enum Command {
     Standard(Standard),
     Compare(Compare),
     Show(Show),
+    UpdatePerf(UpdatePerf),
+    DeletePerf(DeletePerf),
+    ReadPerf(ReadPerf),
+}
+
+#[derive(Debug, Args)]
+struct UpdatePerf {
+    path: String,
+    column: String,
+    multiplier: f64,
+}
+
+#[derive(Debug, Args)]
+struct DeletePerf {
+    path: String,
+    threshold: f64,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct ReadMetrics {
+    row_count: usize,
+}
+
+#[derive(Debug, Args)]
+struct ReadPerf {
+    path: String,
 }
 
 #[derive(Debug, Args)]
@@ -649,6 +831,23 @@ async fn main() {
                 .show()
                 .await
                 .unwrap();
+        }
+
+        Command::UpdatePerf(UpdatePerf { path, column, multiplier }) => {
+            let (duration, metrics) = benchmark_update_tpcds(path, &column, multiplier)
+                .await
+                .unwrap();
+            println!("Update Metrics: {:?}\nTime: {:.2?}", metrics, duration);
+        }
+        Command::DeletePerf(DeletePerf { path, threshold }) => {
+            let (duration, metrics) = benchmark_delete_tpcds(path, threshold)
+                .await
+                .unwrap();
+            println!("Delete Metrics: {:?}\nTime: {:.2?}", metrics, duration);
+        }
+        Command::ReadPerf(ReadPerf { path }) => {
+            let (duration, metrics) = benchmark_read_tpcds(path).await.unwrap();
+            println!("Read Metrics: {:?}\nTime: {:.2?}", metrics, duration);
         }
     }
 }
