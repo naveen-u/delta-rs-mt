@@ -32,7 +32,10 @@ pub async fn initiate_add_to_tgroup(
 }
 
 /// Checkpoint a table for addition to a T-group
-pub async fn create_initial_tgroup_checkpoint(table: &DeltaTable) -> Result<(), DeltaTableError> {
+pub async fn create_initial_tgroup_checkpoint(
+    table: &DeltaTable,
+    tgroup_uri: &str,
+) -> Result<(), DeltaTableError> {
     create_checkpoint_for_tgroup_add(
         table
             .tgroup_log_segment
@@ -47,6 +50,7 @@ pub async fn create_initial_tgroup_checkpoint(table: &DeltaTable) -> Result<(), 
             .expect("Tgroup details have not been initialized for the table instance")
             .as_ref(),
         None,
+        Some(String::from(tgroup_uri)),
     )
     .await?;
     Ok(())
@@ -78,31 +82,4 @@ pub async fn finalize_add_to_tgroup(
             operation,
         )
         .await;
-}
-
-/// Checkpoint a table for addition to a T-group
-pub async fn update_last_checkpoint_for_table(
-    table: &DeltaTable,
-    checkpoint: CheckPoint,
-    tgroup_uri: String,
-) -> Result<(), DeltaTableError> {
-    let mut cp = checkpoint.clone();
-    // cp.tgroup_uri = Some(tgroup_uri);
-    // create_checkpoint_for_tgroup_add(
-    //     table
-    //         .tgroup_log_segment
-    //         .as_ref()
-    //         .expect("Expected tgroup log segment")
-    //         .version,
-    //     table.snapshot().map_err(|_| ProtocolError::NoMetaData)?,
-    //     table.log_store.as_ref(),
-    //     table
-    //         .tgroup_log_store
-    //         .as_ref()
-    //         .expect("Tgroup details have not been initialized for the table instance")
-    //         .as_ref(),
-    //     None,
-    // )
-    // .await?;
-    Ok(())
 }

@@ -1426,7 +1426,7 @@ impl RawDeltaTable {
                             .map_err(PythonError::from)
                             .map_err(PyErr::from)
                             .unwrap();
-                        create_initial_tgroup_checkpoint(&table)
+                        create_initial_tgroup_checkpoint(&table, tgroup_uri)
                             .await
                             .map_err(PythonError::from)
                             .map_err(PyErr::from)

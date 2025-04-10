@@ -212,6 +212,7 @@ pub async fn create_checkpoint_for_tgroup_add(
     log_store: &dyn LogStore,
     tgroup_log_store: &dyn LogStore,
     operation_id: Option<Uuid>,
+    tgroup_uri: Option<String>,
 ) -> Result<(), ProtocolError> {
     if !state.load_config().require_files {
         return Err(ProtocolError::Generic(
@@ -236,6 +237,7 @@ pub async fn create_checkpoint_for_tgroup_add(
     let last_checkpoint_path = tgroup_log_store
         .log_path()
         .child(format!("_last_checkpoint.{table_id}"));
+    let table_last_checkpoint_path = log_store.log_path().child(format!("_last_checkpoint"));
 
     debug!("Writing parquet bytes to checkpoint buffer.");
     let tombstones = state
@@ -243,23 +245,38 @@ pub async fn create_checkpoint_for_tgroup_add(
         .await
         .map_err(|_| ProtocolError::Generic("filed to get tombstones".into()))?
         .collect::<Vec<_>>();
-    let (checkpoint, parquet_bytes) = parquet_bytes_from_state(state, tombstones)?;
+    let (mut checkpoint, parquet_bytes) = parquet_bytes_from_state(state, tombstones)?;
 
     let file_name = format!("{version:020}.{table_id}.checkpoint.parquet");
     let checkpoint_path = tgroup_log_store.log_path().child(file_name);
 
     let object_store = tgroup_log_store.object_store(operation_id);
+    let table_object_store = log_store.object_store(operation_id);
     debug!("Writing checkpoint to {checkpoint_path:?}.");
     object_store
         .put(&checkpoint_path, parquet_bytes.into())
         .await?;
 
-    let last_checkpoint_content: Value = serde_json::to_value(checkpoint)?;
+    // Add TGroup URI and set version to the TGroup's version
+    checkpoint.tgroup_uri = tgroup_uri;
+    checkpoint.version = version;
+
+    let last_checkpoint_content: Value = serde_json::to_value(&checkpoint)?;
     let last_checkpoint_content = bytes::Bytes::from(serde_json::to_vec(&last_checkpoint_content)?);
 
+    // Write _last_checkpoint in the TGroup
     debug!("Writing _last_checkpoint to {last_checkpoint_path:?}.");
     object_store
-        .put(&last_checkpoint_path, last_checkpoint_content.into())
+        .put(
+            &last_checkpoint_path,
+            last_checkpoint_content.clone().into(),
+        )
+        .await?;
+
+    // Write _last_checkpoint in the table's logs
+    debug!("Writing _last_checkpoint to {table_last_checkpoint_path:?}.");
+    table_object_store
+        .put(&table_last_checkpoint_path, last_checkpoint_content.into())
         .await?;
 
     Ok(())

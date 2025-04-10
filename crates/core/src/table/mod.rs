@@ -35,7 +35,7 @@ pub mod state;
 pub mod state_arrow;
 
 /// Metadata for a checkpoint file
-#[derive(Serialize, Deserialize, Debug, Default, Clone, Copy)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct CheckPoint {
     /// Delta table version
@@ -51,6 +51,9 @@ pub struct CheckPoint {
     #[serde(skip_serializing_if = "Option::is_none")]
     /// The number of AddFile actions in the checkpoint. This field is optional.
     pub(crate) num_of_add_files: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    /// T-group URI that this table belongs to
+    pub(crate) tgroup_uri: Option<String>,
 }
 
 #[derive(Default)]
@@ -66,6 +69,8 @@ pub struct CheckPointBuilder {
     pub(crate) size_in_bytes: Option<i64>,
     /// The number of AddFile actions in the checkpoint. This field is optional.
     pub(crate) num_of_add_files: Option<i64>,
+    /// T-group URI that this table belongs to
+    pub(crate) tgroup_uri: Option<String>,
 }
 
 impl CheckPointBuilder {
@@ -78,6 +83,7 @@ impl CheckPointBuilder {
             parts: None,
             size_in_bytes: None,
             num_of_add_files: None,
+            tgroup_uri: None,
         }
     }
 
@@ -99,6 +105,12 @@ impl CheckPointBuilder {
         self
     }
 
+    /// The TGroup URI of the table. This field is optional.
+    pub fn with_tgroup_uri(mut self, tgroup_uri: String) -> Self {
+        self.tgroup_uri = Some(tgroup_uri);
+        self
+    }
+
     /// Build the final [`CheckPoint`] struct.
     pub fn build(self) -> CheckPoint {
         CheckPoint {
@@ -107,6 +119,7 @@ impl CheckPointBuilder {
             parts: self.parts,
             size_in_bytes: self.size_in_bytes,
             num_of_add_files: self.num_of_add_files,
+            tgroup_uri: self.tgroup_uri,
         }
     }
 }
@@ -120,6 +133,7 @@ impl CheckPoint {
             parts: parts.or(None),
             size_in_bytes: None,
             num_of_add_files: None,
+            tgroup_uri: None,
         }
     }
 }
@@ -714,6 +728,7 @@ mod tests {
             parts: None,
             size_in_bytes: Some(1),
             num_of_add_files: Some(1),
+            tgroup_uri: None,
         };
 
         let checkpoint_json_serialized =

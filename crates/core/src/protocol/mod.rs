@@ -679,7 +679,8 @@ pub(crate) async fn find_latest_check_point_for_version(
                 // skip checkpoints newer than max version
                 continue;
             }
-            if cp.is_none() || curr_ver > cp.unwrap().version {
+            let cp_clone = cp.clone();
+            if cp_clone.is_none() || curr_ver > cp_clone.unwrap().version {
                 cp = Some(CheckPoint::new(curr_ver, 0, None));
             }
             continue;
@@ -692,7 +693,8 @@ pub(crate) async fn find_latest_check_point_for_version(
                 // skip checkpoints newer than max version
                 continue;
             }
-            if cp.is_none() || curr_ver > cp.unwrap().version {
+            let cp_clone = cp.clone();
+            if cp_clone.is_none() || curr_ver > cp_clone.unwrap().version {
                 let parts_str = captures.get(2).unwrap().as_str();
                 let parts = parts_str.parse().unwrap();
                 cp = Some(CheckPoint::new(curr_ver, 0, Some(parts)));
