@@ -1,2 +1,6 @@
-{"commitInfo":{"timestamp":1615751700281,"operation":"WRITE","operationParameters":{"mode":"Append","partitionBy":"[]"},"readVersion":0,"isBlindAppend":true,"operationMetrics":{"numFiles":"1","numOutputBytes":"442","numOutputRows":"1"}}}
-{"add":{"path":"part-00000-1abe25d3-0da6-46c5-98c1-7a69872fd797-c000.snappy.parquet","partitionValues":{},"size":442,"modificationTime":1615751700275,"dataChange":true}}
+{"tGroup":{"tgroupUri":"/home/gnilay/si330v2/delta/delta-rs-mt/crates/test/tests/data/_tgroup_delta_log","timestamp":1615751716705,"redirectState":"ReadOnly"}}
+{"commitInfo":{"timestamp":1615751716705,"operation":"WRITE","operationParameters":{"mode":"Append","partitionBy":"[]"},"readVersion":9,"isBlindAppend":true,"operationMetrics":{"numFiles":"1","numOutputBytes":"442","numOutputRows":"1"}}}
+{"commitInfo":{"timestamp":1615751699523,"operation":"WRITE","operationParameters":{"mode":"Append","partitionBy":"[]"},"isBlindAppend":true,"operationMetrics":{"numFiles":"1","numOutputBytes":"442","numOutputRows":"1"}}}
+{"protocol":{"minReaderVersion":1,"minWriterVersion":2}}
+{"metaData":{"id":"cf3741a3-5f93-434f-99ac-9a4bebcdf06c","format":{"provider":"parquet","options":{}},"schemaString":"{\"type\":\"struct\",\"fields\":[{\"name\":\"version\",\"type\":\"integer\",\"nullable\":true,\"metadata\":{}}]}","partitionColumns":[],"configuration":{},"createdTime":1615751699422}}
+{"table_id": "cf3741a3-5f93-434f-99ac-9a4bebcdf06c","add":{"path":"part-00000-f0e955c5-a1e3-4eec-834e-dcc098fc9005-c000.snappy.parquet","partitionValues":{},"size":442,"modificationTime":1615751716698,"dataChange":true}}

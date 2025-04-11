@@ -2,7 +2,8 @@ use std::cmp::Ordering;
 use std::collections::VecDeque;
 use std::sync::{Arc, LazyLock};
 
-use arrow_array::RecordBatch;
+use arrow::compute::filter_record_batch;
+use arrow_array::{RecordBatch, StringArray, StructArray};
 use chrono::Utc;
 use futures::{stream::BoxStream, StreamExt, TryStreamExt};
 use itertools::Itertools;
@@ -14,10 +15,12 @@ use parquet::arrow::ProjectionMask;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use tracing::debug;
+use arrow::compute::kernels::comparison::regexp_is_match_scalar;
 
 use object_store::memory::InMemory;
 
 use super::parse;
+use crate::kernel::arrow::extract;
 use crate::kernel::{arrow::json, ActionType, Metadata, Protocol, Schema, StructType};
 use crate::logstore::LogStore;
 use crate::operations::transaction::CommitData;
@@ -326,11 +329,12 @@ impl LogSegment {
             .map(|f| f.last_modified)
     }
 
-    pub(super) fn commit_stream(
+    pub(super) fn commit_stream_with_tableid(
         &self,
         store: Arc<dyn ObjectStore>,
         read_schema: &Schema,
         config: &DeltaTableConfig,
+        table_id: Option<String>,
     ) -> DeltaResult<BoxStream<'_, DeltaResult<RecordBatch>>> {
         let decoder = json::get_decoder(Arc::new(read_schema.try_into()?), config)?;
         let stream = futures::stream::iter(self.commit_files.iter())
@@ -339,9 +343,38 @@ impl LogSegment {
                 async move { store.get(&meta.location).await?.bytes().await }
             })
             .buffered(config.log_buffer_size);
-        Ok(json::decode_stream(decoder, stream).boxed())
+    
+        let record_batch = json::decode_stream(decoder, stream).map(move |result| {
+            result.map(|rb| {
+                match &table_id {
+                    Some(id) => {
+                        if rb.column_by_name("table_id").is_some() {
+                            let table_id_col = extract::extract_and_cast::<StringArray>(&rb, "table_id")
+                                .unwrap();
+                            let filter = regexp_is_match_scalar(table_id_col, id, None).unwrap();
+                            filter_record_batch(&rb, &filter).unwrap()
+                        }
+                        else{
+                            rb
+                        }
+                    }
+                    None => rb, // Return the owned record batch instead of a reference.
+                }
+            })
+        });
+        Ok(record_batch.boxed())
     }
-
+    
+    pub(super) fn commit_stream(
+        &self,
+        store: Arc<dyn ObjectStore>,
+        read_schema: &Schema,
+        config: &DeltaTableConfig,
+    ) -> DeltaResult<BoxStream<'_, DeltaResult<RecordBatch>>> {
+        return self.commit_stream_with_tableid(store, read_schema, config, None);    
+    }
+    
+    
     pub(super) fn checkpoint_stream(
         &self,
         store: Arc<dyn ObjectStore>,

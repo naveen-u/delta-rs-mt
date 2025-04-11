@@ -228,10 +228,11 @@ impl Snapshot {
         );
 
         schema_actions.insert(ActionType::Remove);
-        let log_stream = self.log_segment.commit_stream(
+        let log_stream = self.log_segment.commit_stream_with_tableid(
             store.clone(),
             &StructType::new(schema_actions.iter().map(|a| a.schema_field().clone())),
             &self.config,
+            Some(self.metadata.id.clone())
         )?;
 
         ReplayStream::try_new(log_stream, checkpoint_stream, self, visitors)

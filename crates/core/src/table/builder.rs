@@ -359,7 +359,7 @@ impl DeltaTableBuilder {
                 if let Ok(json_value) = serde_json::from_slice::<serde_json::Value>(line) {
                     if let Some(tgroup_obj) = json_value.get("tGroup") {
                         if let Some(uri) = tgroup_obj.get("tgroupUri").and_then(|v| v.as_str()) {
-                            println!("Extracted tgroupUri: {}", uri);
+                            // println!("Extracted tgroupUri: {}", uri);
 
                             let uri_str = format!("file://{}/", uri.trim_end_matches('/'));
 
