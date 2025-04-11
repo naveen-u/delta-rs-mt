@@ -348,32 +348,21 @@ impl DeltaTableBuilder {
         if let Some(last_commit) = commit_files.first() {
             let bytes = log_store.object_store(None).get(&last_commit.location).await?.bytes().await?;
         
-            for (i, line) in bytes.split(|b| *b == b'\n').enumerate() {
-                // Print the raw line
-                // match std::str::from_utf8(line) {
-                //     Ok(utf8_line) => println!("Line {}: {}", i + 1, utf8_line),
-                //     Err(_) => println!("Line {}: [non-UTF8] {:?}", i + 1, line),
-                // }
-        
-                // Try parsing it
+            for (i, line) in bytes.split(|b| *b == b'\n').enumerate() {        
                 if let Ok(json_value) = serde_json::from_slice::<serde_json::Value>(line) {
                     if let Some(tgroup_obj) = json_value.get("tGroup") {
                         if let Some(uri) = tgroup_obj.get("tgroupUri").and_then(|v| v.as_str()) {
-                            // println!("Extracted tgroupUri: {}", uri);
-
                             let uri_str = format!("file://{}/", uri.trim_end_matches('/'));
 
                             let tgroup_url = ensure_table_uri(&uri_str)?;
 
                             let tgroup_logstore: Arc<dyn LogStore> = logstore_for(
                                 tgroup_url.clone(),
-                                StorageOptions::default(), // you can pass in options if needed
+                                StorageOptions::default(),
                                 None,
                             )?;
 
-
-                            // let tgroup_store = tgroup_logstore.object_store(None);
-                            tgroup_store = Some(tgroup_logstore.clone());                            
+                            table.log_store = tgroup_logstore.clone();                            
                             break;
                         }
                     }

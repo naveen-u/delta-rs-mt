@@ -114,44 +114,44 @@ impl LogSegment {
             _ => list_log_files(store, &log_url, version, None).await?,
         };
 
-        println!("tgroup_uri: {:?}", tgroup_uri);
+        // println!("tgroup_uri: {:?}", tgroup_uri);
 
-        if let Some(ref uri) = tgroup_uri {
-            // Call tgrouup function to handle tgroup
-            // let tgroup_path = Path::from(uri.as_str());
-            let dummy_store = Arc::new(InMemory::new()) as Arc<dyn ObjectStore>;
-            return LogSegment::try_new_tgroup(uri, version, dummy_store.as_ref()).await;
-        } else {
-            // Continue with current logic (no-op or fallthrough)
-            // remove all files above requested version
-            if let Some(version) = version {
-                commit_files.retain(|meta| meta.location.commit_version() <= Some(version));
-            }
-
-            let mut segment = Self {
-                version: 0,
-                commit_files: commit_files.into(),
-                checkpoint_files,
-            };
-            if segment.commit_files.is_empty() && segment.checkpoint_files.is_empty() {
-                return Err(DeltaTableError::NotATable("no log files".into()));
-            }
-            // get the effective version from chosen files
-            let version_eff = segment.file_version().ok_or(DeltaTableError::Generic(
-                "failed to get effective version".into(),
-            ))?; // TODO: A more descriptive error
-            segment.version = version_eff;
-            segment.validate()?;
-
-            if let Some(v) = version {
-                if version_eff != v {
-                    // TODO more descriptive error
-                    return Err(DeltaTableError::Generic("missing version".into()));
-                }
-            }
-
-            Ok(segment)
+        // if false {
+        //     // Call tgrouup function to handle tgroup
+        //     let tgroup_path = Path::from(uri.as_str());
+        //     let dummy_store = Arc::new(InMemory::new()) as Arc<dyn ObjectStore>;
+        //     return LogSegment::try_new_tgroup(uri, version, dummy_store.as_ref()).await;
+        // } else {
+        // Continue with current logic (no-op or fallthrough)
+        // remove all files above requested version
+        if let Some(version) = version {
+            commit_files.retain(|meta| meta.location.commit_version() <= Some(version));
         }
+
+        let mut segment = Self {
+            version: 0,
+            commit_files: commit_files.into(),
+            checkpoint_files,
+        };
+        if segment.commit_files.is_empty() && segment.checkpoint_files.is_empty() {
+            return Err(DeltaTableError::NotATable("no log files".into()));
+        }
+        // get the effective version from chosen files
+        let version_eff = segment.file_version().ok_or(DeltaTableError::Generic(
+            "failed to get effective version".into(),
+        ))?; // TODO: A more descriptive error
+        segment.version = version_eff;
+        segment.validate()?;
+
+        if let Some(v) = version {
+            if version_eff != v {
+                // TODO more descriptive error
+                return Err(DeltaTableError::Generic("missing version".into()));
+            }
+        }
+
+        Ok(segment)
+        // }
     }
 
     pub async fn try_new_tgroup(
@@ -608,21 +608,21 @@ async fn list_log_files_with_checkpoint(
     let mut tgroup_uri: Option<String> = None;
 
     // Try reading tgroupUri from the first commit file
-    if let Some(first_commit) = commit_files.first() {
-        if let Ok(data) = fs_client.get(&first_commit.location).await {
-            let bytes = data.bytes().await?;
-            for line in bytes.split(|b| *b == b'\n') {
-                if let Ok(json_value) = serde_json::from_slice::<serde_json::Value>(line) {
-                    if let Some(tgroup_obj) = json_value.get("tGroup") {
-                        if let Some(uri) = tgroup_obj.get("tgroupUri").and_then(|v| v.as_str()) {
-                            tgroup_uri = Some(uri.to_string());
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-    }
+    // if let Some(first_commit) = commit_files.first() {
+    //     if let Ok(data) = fs_client.get(&first_commit.location).await {
+    //         let bytes = data.bytes().await?;
+    //         for line in bytes.split(|b| *b == b'\n') {
+    //             if let Ok(json_value) = serde_json::from_slice::<serde_json::Value>(line) {
+    //                 if let Some(tgroup_obj) = json_value.get("tGroup") {
+    //                     if let Some(uri) = tgroup_obj.get("tgroupUri").and_then(|v| v.as_str()) {
+    //                         tgroup_uri = Some(uri.to_string());
+    //                         break;
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
     
 
 
