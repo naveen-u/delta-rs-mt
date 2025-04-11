@@ -24,6 +24,7 @@ use crate::table::CheckPoint;
 
 pub mod checkpoints;
 mod parquet_read;
+pub mod tgroup;
 mod time_utils;
 
 /// Error returned when an invalid Delta log action is encountered.
@@ -456,6 +457,17 @@ pub enum DeltaOperation {
         /// Fields added to existing schema
         fields: Vec<StructField>,
     },
+
+    /// Represents the start of a T-Group addition operation
+    TGroupStart { tgroup_uri: String },
+
+    TGroupInitCheckpoint {
+        table_id: String,
+        tgroup_uri: String,
+    },
+
+    /// Represents the end of a T-Group addition operation
+    TGroupEnd { tgroup_uri: String },
 }
 
 impl DeltaOperation {
@@ -484,6 +496,9 @@ impl DeltaOperation {
             DeltaOperation::DropConstraint { .. } => "DROP CONSTRAINT",
             DeltaOperation::AddFeature { .. } => "ADD FEATURE",
             DeltaOperation::UpdateFieldMetadata { .. } => "UPDATE FIELD METADATA",
+            DeltaOperation::TGroupStart { .. } => "TGROUP START",
+            DeltaOperation::TGroupInitCheckpoint { .. } => "TGROUP INIT CHECKPOINT",
+            DeltaOperation::TGroupEnd { .. } => "TGROUP END",
         }
     }
 
@@ -527,6 +542,9 @@ impl DeltaOperation {
             | Self::VacuumStart { .. }
             | Self::VacuumEnd { .. }
             | Self::AddConstraint { .. }
+            | Self::TGroupStart { .. }
+            | Self::TGroupInitCheckpoint { .. }
+            | Self::TGroupEnd { .. }
             | Self::DropConstraint { .. } => false,
             Self::Create { .. }
             | Self::FileSystemCheck {}
@@ -661,7 +679,8 @@ pub(crate) async fn find_latest_check_point_for_version(
                 // skip checkpoints newer than max version
                 continue;
             }
-            if cp.is_none() || curr_ver > cp.unwrap().version {
+            let cp_clone = cp.clone();
+            if cp_clone.is_none() || curr_ver > cp_clone.unwrap().version {
                 cp = Some(CheckPoint::new(curr_ver, 0, None));
             }
             continue;
@@ -674,7 +693,8 @@ pub(crate) async fn find_latest_check_point_for_version(
                 // skip checkpoints newer than max version
                 continue;
             }
-            if cp.is_none() || curr_ver > cp.unwrap().version {
+            let cp_clone = cp.clone();
+            if cp_clone.is_none() || curr_ver > cp_clone.unwrap().version {
                 let parts_str = captures.get(2).unwrap().as_str();
                 let parts = parts_str.parse().unwrap();
                 cp = Some(CheckPoint::new(curr_ver, 0, Some(parts)));
