@@ -1,0 +1,2 @@
+{"tGroup":{"tableId":"5fba94ed-9794-4965-ba6e-6ee3c0d22af9","tgroupUri":"/home/naveen/Projects/delta-rs-mt/crates/test/tests/data/t_group_1","timestamp":1744418323549,"redirectState":"Redirect"}}
+{"commitInfo":{"timestamp":1744418323549,"operation":"TGROUP END","operationParameters":{"tgroup_uri":"/home/naveen/Projects/delta-rs-mt/crates/test/tests/data/t_group_1"},"clientVersion":"delta-rs.py-0.25.2"}}
