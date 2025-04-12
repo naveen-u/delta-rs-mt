@@ -112,12 +112,7 @@ pub use protocol::checkpoints;
 /// Will fail fast if specified `table_uri` is a local path but doesn't exist.
 pub async fn open_table(table_uri: impl AsRef<str>) -> Result<DeltaTable, DeltaTableError> {
     println!("{}", table_uri.as_ref());
-    let (mut table, tgroup_store) = DeltaTableBuilder::from_valid_uri(table_uri)?.load().await?;
-    if let Some(store) = tgroup_store {
-        // Override the log_store inside `self.0` with the tgroup log store
-        table.log_store = store;
-    }
-
+    let table = DeltaTableBuilder::from_valid_uri(table_uri)?.load().await?;
     Ok(table)
 }
 
@@ -129,7 +124,7 @@ pub async fn open_table_with_storage_options(
     table_uri: impl AsRef<str>,
     storage_options: HashMap<String, String>,
 ) -> Result<DeltaTable, DeltaTableError> {
-    let (table, _) = DeltaTableBuilder::from_valid_uri(table_uri)?
+    let table = DeltaTableBuilder::from_valid_uri(table_uri)?
         .with_storage_options(storage_options)
         .load()
         .await?;
@@ -144,7 +139,7 @@ pub async fn open_table_with_version(
     table_uri: impl AsRef<str>,
     version: i64,
 ) -> Result<DeltaTable, DeltaTableError> {
-    let (table, _) = DeltaTableBuilder::from_valid_uri(table_uri)?
+    let table = DeltaTableBuilder::from_valid_uri(table_uri)?
         .with_version(version)
         .load()
         .await?;
@@ -161,7 +156,7 @@ pub async fn open_table_with_ds(
     table_uri: impl AsRef<str>,
     ds: impl AsRef<str>,
 ) -> Result<DeltaTable, DeltaTableError> {
-    let  (table, _) = DeltaTableBuilder::from_valid_uri(table_uri)?
+    let table = DeltaTableBuilder::from_valid_uri(table_uri)?
         .with_datestring(ds)?
         .load()
         .await?;

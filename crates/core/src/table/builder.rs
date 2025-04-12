@@ -4,13 +4,13 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use crate::kernel::snapshot::log_segment::list_log_files;
 use chrono::{DateTime, FixedOffset, Utc};
 use object_store::path::Path;
 use object_store::DynObjectStore;
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 use url::Url;
-use crate::kernel::snapshot::log_segment::list_log_files;
 
 use super::DeltaTable;
 use crate::errors::{DeltaResult, DeltaTableError};
@@ -323,32 +323,38 @@ impl DeltaTableBuilder {
     }
 
     /// Build the [`DeltaTable`] and load its state
-    pub async fn load(&mut self) -> DeltaResult<(DeltaTable, Option<Arc<dyn LogStore>>)> {
-        let mut tgroup_store: Option<Arc<dyn LogStore>> = None;
+    pub async fn load(&mut self) -> DeltaResult<DeltaTable> {
         let version = self.version;
         println!("{}", self.table_uri);
         let mut builder = self.clone();
         builder.table_uri_orig = Some(builder.table_uri.clone());
-    
+
         let mut table = builder.build()?;
 
-        let log_store = table.log_store();        
+        let log_store = table.log_store();
 
         let log_path = &Path::default().child("_delta_log");
 
         // Step 2: List log files using log_segment's function
-        let (commit_files, _checkpoint_files, _tgroup_uri) = crate::kernel::snapshot::log_segment::list_log_files(
-            log_store.object_store(None).as_ref(),
-            &log_path,
-            None,
-            None,
-        ).await?;
+        let (commit_files, _checkpoint_files, _tgroup_uri) =
+            crate::kernel::snapshot::log_segment::list_log_files(
+                log_store.object_store(None).as_ref(),
+                &log_path,
+                None,
+                None,
+            )
+            .await?;
 
         // Step 3: Read the last JSON commit file
         if let Some(last_commit) = commit_files.first() {
-            let bytes = log_store.object_store(None).get(&last_commit.location).await?.bytes().await?;
-        
-            for (i, line) in bytes.split(|b| *b == b'\n').enumerate() {        
+            let bytes = log_store
+                .object_store(None)
+                .get(&last_commit.location)
+                .await?
+                .bytes()
+                .await?;
+
+            for (i, line) in bytes.split(|b| *b == b'\n').enumerate() {
                 if let Ok(json_value) = serde_json::from_slice::<serde_json::Value>(line) {
                     if let Some(tgroup_obj) = json_value.get("tGroup") {
                         if let Some(uri) = tgroup_obj.get("tgroupUri").and_then(|v| v.as_str()) {
@@ -356,20 +362,16 @@ impl DeltaTableBuilder {
 
                             let tgroup_url = ensure_table_uri(&uri_str)?;
 
-                            let tgroup_logstore: Arc<dyn LogStore> = logstore_for(
-                                tgroup_url.clone(),
-                                StorageOptions::default(),
-                                None,
-                            )?;
+                            let tgroup_logstore: Arc<dyn LogStore> =
+                                logstore_for(tgroup_url.clone(), StorageOptions::default(), None)?;
 
-                            table.log_store = tgroup_logstore.clone();                            
+                            table.log_store = tgroup_logstore.clone();
                             break;
                         }
                     }
                 }
             }
         }
-        
 
         // println!("{}", self.table_uri.as_ref());
         match version {
@@ -377,7 +379,7 @@ impl DeltaTableBuilder {
             DeltaVersion::Version(v) => table.load_version(v).await?,
             DeltaVersion::Timestamp(ts) => table.load_with_datetime(ts).await?,
         }
-        Ok((table, tgroup_store))
+        Ok(table)
     }
 }
 
