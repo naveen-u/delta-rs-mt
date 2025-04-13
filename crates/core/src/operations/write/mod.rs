@@ -40,6 +40,8 @@ use std::sync::Arc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use std::vec;
 
+use crate::operations::transaction::PreCommit;
+
 use arrow_array::RecordBatch;
 use datafusion::catalog::TableProvider;
 use datafusion::datasource::MemTable;
@@ -72,6 +74,18 @@ use crate::operations::cast::merge_schema::merge_arrow_schema;
 use crate::protocol::{DeltaOperation, SaveMode};
 use crate::table::state::DeltaTableState;
 use crate::DeltaTable;
+
+pub struct IntermediateCommitData {
+    pub actions: Vec<Action>,
+    pub partition_columns: Vec<String>,
+    pub state: SessionState, // change to your actual state type
+    pub predicate_str: Option<String>,
+    pub predicate: Option<Expression>,
+    pub writer_stats_config: WriterStatsConfig,
+    pub metrics: WriteMetrics,
+    pub commit_properties: CommitProperties,
+}
+
 
 #[derive(thiserror::Error, Debug)]
 pub(crate) enum WriteError {
@@ -404,341 +418,359 @@ impl WriteBuilder {
         }
     }
 }
+impl WriteBuilder {
+    /// This helper extracts nearly all of the logic from the beginning of `into_future`
+    /// until before we commit.
+    async fn prepare_precommit(mut self) -> DeltaResult<PreCommit<'static>> {
+        // Runs pre execution handler.
+        let operation_id = self.get_operation_id();
+        self.pre_execute(operation_id).await?;
+
+        let mut metrics = WriteMetrics::default();
+        let exec_start = Instant::now();
+
+        let write_planner = DeltaPlanner::<WriteMetricExtensionPlanner> {
+            extension_planner: WriteMetricExtensionPlanner {},
+        };
+
+        // Create table actions to initialize table if the table does not exist yet.
+        let mut actions = self.check_preconditions().await?;
+        let partition_columns = self.get_partition_columns()?;
+
+        // Build or derive state.
+        let state = if let Some(ref state) = self.state {
+            SessionStateBuilder::new_from_existing(state.clone())
+                .with_query_planner(Arc::new(write_planner))
+                .build()
+        } else {
+            let state = SessionStateBuilder::new()
+                .with_default_features()
+                .with_query_planner(Arc::new(write_planner))
+                .build();
+            register_store(self.log_store.clone(), state.runtime_env().clone());
+            state
+        };
+
+        // Process generated columns.
+        let generated_col_expressions = self
+            .snapshot
+            .as_ref()
+            .map(|v| v.schema().get_generated_columns().unwrap_or_default())
+            .unwrap_or_default();
+
+        let mut schema_drift = false;
+        let source = DataFrame::new(state.clone(), self.input.take().unwrap().as_ref().clone());
+
+        // Add missing generated columns to source DataFrame.
+        let (mut source, missing_generated_columns) =
+            add_missing_generated_columns(source, &generated_col_expressions)?;
+        let source_schema: Arc<Schema> = Arc::new(source.schema().as_arrow().clone());
+
+        // Schema merging section (with cast and merging if necessary).
+        let mut new_schema = None;
+        if let Some(snapshot) = &self.snapshot {
+            let table_schema = snapshot.input_schema()?;
+            if let Err(schema_err) = try_cast_schema(source_schema.fields(), table_schema.fields()) {
+                schema_drift = true;
+                if self.mode == SaveMode::Overwrite && self.schema_mode == Some(SchemaMode::Overwrite) {
+                    new_schema = None;
+                } else if self.schema_mode == Some(SchemaMode::Merge) {
+                    new_schema = Some(merge_arrow_schema(
+                        table_schema.clone(),
+                        source_schema.clone(),
+                        schema_drift,
+                    )?);
+                } else {
+                    return Err(schema_err.into());
+                }
+            } else if self.mode == SaveMode::Overwrite && self.schema_mode == Some(SchemaMode::Overwrite) {
+                new_schema = None;
+            } else {
+                new_schema = Some(merge_arrow_schema(
+                    table_schema.clone(),
+                    source_schema.clone(),
+                    schema_drift,
+                )?);
+            }
+        }
+        if let Some(new_schema) = new_schema {
+            let mut schema_evolution_projection = Vec::new();
+            for field in new_schema.fields() {
+                // If field exists in source, cast to the new datatype.
+                if source_schema.index_of(field.name()).is_ok() {
+                    let cast_fn = if self.safe_cast { try_cast } else { cast };
+                    let cast_expr = cast_fn(
+                        Expr::Column(Column::from_name(field.name())),
+                        field.data_type().clone(),
+                    )
+                    .alias(field.name());
+                    schema_evolution_projection.push(cast_expr);
+                } else {
+                    // Otherwise, insert a null column for the missing field.
+                    schema_evolution_projection.push(
+                        cast(
+                            lit(ScalarValue::Null).alias(field.name()),
+                            field.data_type().clone(),
+                        )
+                        .alias(field.name()),
+                    );
+                }
+            }
+            source = source.select(schema_evolution_projection)?;
+        }
+
+        source = add_generated_columns(
+            source,
+            &generated_col_expressions,
+            &missing_generated_columns,
+            &state,
+        )?;
+
+        let source = LogicalPlan::Extension(Extension {
+            node: Arc::new(MetricObserver {
+                id: "write_source_count".into(),
+                input: source.logical_plan().clone(),
+                enable_pushdown: false,
+            }),
+        });
+
+        let mut source = DataFrame::new(state.clone(), source);
+        let schema = Arc::new(source.schema().as_arrow().clone());
+
+        // If schema merging is enabled and there's a drift, add a metadata update action.
+        if self.schema_mode == Some(SchemaMode::Merge) && schema_drift {
+            if let Some(snapshot) = &self.snapshot {
+                let schema_struct: StructType = schema.clone().try_into()?;
+                let current_protocol = snapshot.protocol();
+                let configuration = snapshot.metadata().configuration.clone();
+                let new_protocol = current_protocol
+                    .clone()
+                    .apply_column_metadata_to_protocol(&schema_struct)?
+                    .move_table_properties_into_features(&configuration);
+                let mut metadata =
+                    Metadata::try_new(schema_struct, partition_columns.clone(), configuration)?;
+                let existing_metadata_id = snapshot.metadata().id.clone();
+                if !existing_metadata_id.is_empty() {
+                    metadata = metadata.with_table_id(existing_metadata_id);
+                }
+                let schema_action = Action::Metadata(metadata);
+                actions.push(schema_action);
+                if current_protocol != &new_protocol {
+                    actions.push(new_protocol.into());
+                }
+            }
+        }
+
+        // Parse predicate if provided.
+        let (predicate_str, predicate) = match self.predicate {
+            Some(predicate) => {
+                let pred = match predicate {
+                    Expression::DataFusion(expr) => expr,
+                    Expression::String(s) => {
+                        let df_schema = DFSchema::try_from(schema.as_ref().to_owned())?;
+                        parse_predicate_expression(&df_schema, s, &state)?
+                    }
+                };
+                (Some(fmt_expr_to_sql(&pred)?), Some(pred))
+            }
+            _ => (None, None),
+        };
+
+        let config: Option<crate::table::config::TableConfig<'_>> = self
+            .snapshot
+            .as_ref()
+            .map(|snapshot| snapshot.table_config());
+        let target_file_size = self.target_file_size.or_else(|| {
+            Some(super::get_target_file_size(&config, &self.configuration) as usize)
+        });
+        let (num_indexed_cols, stats_columns) =
+            super::get_num_idx_cols_and_stats_columns(config, self.configuration);
+        let writer_stats_config = WriterStatsConfig {
+            num_indexed_cols,
+            stats_columns,
+        };
+
+        let mut contains_cdc = false;
+        // For an overwrite mode, prepare remove actions or CDC logic.
+        if let Some(snapshot) = &self.snapshot {
+            if matches!(self.mode, SaveMode::Overwrite) {
+                let table_schema = snapshot.input_schema()?;
+                let delta_schema: StructType = schema.as_ref().try_into()?;
+                if schema != table_schema {
+                    let mut metadata = snapshot.metadata().clone();
+                    metadata.schema_string = serde_json::to_string(&delta_schema)?;
+                    actions.push(Action::Metadata(metadata));
+                }
+                let configuration = snapshot.metadata().configuration.clone();
+                let current_protocol = snapshot.protocol();
+                let new_protocol = current_protocol
+                    .clone()
+                    .apply_column_metadata_to_protocol(&delta_schema)?
+                    .move_table_properties_into_features(&configuration);
+                if current_protocol != &new_protocol {
+                    actions.push(new_protocol.into());
+                }
+                let deletion_timestamp = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() as i64;
+                match &predicate {
+                    Some(pred) => {
+                        let (predicate_actions, cdf_df) = prepare_predicate_actions(
+                            pred.clone(),
+                            self.log_store.clone(),
+                            snapshot,
+                            state.clone(),
+                            partition_columns.clone(),
+                            self.writer_properties.clone(),
+                            deletion_timestamp,
+                            writer_stats_config.clone(),
+                            operation_id,
+                        )
+                        .await?;
+
+                        if let Some(cdf_df) = cdf_df {
+                            contains_cdc = true;
+                            source = source
+                                .with_column(CDC_COLUMN_NAME, lit("insert"))?
+                                .union(cdf_df)?;
+                        }
+                        if !predicate_actions.is_empty() {
+                            actions.extend(predicate_actions);
+                        }
+                    }
+                    _ => {
+                        let remove_actions = snapshot
+                            .log_data()
+                            .into_iter()
+                            .map(|p| p.remove_action(true).into());
+                        actions.extend(remove_actions);
+                    }
+                };
+                metrics.num_removed_files = actions
+                    .iter()
+                    .filter(|a| a.action_type() == ActionType::Remove)
+                    .count();
+            }
+        }
+
+        let source_plan = source.clone().create_physical_plan().await?;
+        let add_actions = write_execution_plan_v2(
+            self.snapshot.as_ref(),
+            state.clone(),
+            source_plan.clone(),
+            partition_columns.clone(),
+            self.log_store.object_store(Some(operation_id)).clone(),
+            target_file_size,
+            self.write_batch_size,
+            self.writer_properties,
+            writer_stats_config.clone(),
+            predicate.clone(),
+            contains_cdc,
+        )
+        .await?;
+
+        let source_count = find_metric_node(SOURCE_COUNT_ID, &source_plan).ok_or_else(|| {
+            DeltaTableError::Generic("Unable to locate expected metric node".into())
+        })?;
+        let source_count_metrics = source_count.metrics().unwrap();
+        let num_added_rows = get_metric(&source_count_metrics, SOURCE_COUNT_METRIC);
+        metrics.num_added_rows = num_added_rows;
+        metrics.num_added_files = add_actions.len();
+        actions.extend(add_actions);
+        metrics.execution_time_ms =
+            Instant::now().duration_since(exec_start).as_millis() as u64;
+
+        let operation = DeltaOperation::Write {
+            mode: self.mode,
+            partition_by: if !partition_columns.is_empty() {
+                Some(partition_columns)
+            } else {
+                None
+            },
+            predicate: predicate_str,
+        };
+
+        // Update commit properties with metrics.
+        let mut commit_properties = self.commit_properties.clone();
+        commit_properties.app_metadata.insert(
+            "operationMetrics".to_owned(),
+            serde_json::to_value(&metrics)?,
+        );
+
+        let table_data: Option<&'static dyn TableReference> = self.snapshot.take().map(|snapshot| {
+            // Wrap the snapshot into an Arc.
+            let arc: Arc<dyn TableReference> = Arc::new(snapshot);
+            // Box the Arc so we can leak it.
+            let boxed: Box<Arc<dyn TableReference>> = Box::new(arc);
+            // Leak the Box, obtaining a &'static mut Arc<dyn TableReference>.
+            let leaked: &'static Arc<dyn TableReference> = Box::leak(boxed);
+            // Dereference the Arc to get a &'static dyn TableReference.
+            &**leaked
+        });
+    
+
+        // Build the commit builder.
+        let precommit = CommitBuilder::from(commit_properties)
+            .with_actions(actions)
+            .with_post_commit_hook_handler(self.custom_execute_handler.clone())
+            .with_operation_id(operation_id)
+            .build(
+                // If build requires Option<&dyn TableReference>, convert the Arc to a reference.
+                table_data,
+                self.log_store.clone(),
+                operation.clone(),
+            );
+
+        Ok(precommit)
+    }
+}
 
 impl std::future::IntoFuture for WriteBuilder {
     type Output = DeltaResult<DeltaTable>;
     type IntoFuture = BoxFuture<'static, Self::Output>;
 
     fn into_future(self) -> Self::IntoFuture {
-        let this = self;
+        // Clone fields that will be needed after prepare_precommit since it consumes self.
+        let log_store = self.log_store.clone();
+        let custom_execute_handler = self.custom_execute_handler.clone();
 
         Box::pin(async move {
-            // Runs pre execution handler.
-            let operation_id = this.get_operation_id();
-            this.pre_execute(operation_id).await?;
+            // Call the helper subroutine and obtain the precommit future and operation ID.
+            let precommit = WriteBuilder::prepare_precommit(self).await?;
 
-            let mut metrics = WriteMetrics::default();
-            let exec_start = Instant::now();
-
-            let write_planner = DeltaPlanner::<WriteMetricExtensionPlanner> {
-                extension_planner: WriteMetricExtensionPlanner {},
-            };
-
-            // Create table actions to initialize table in case it does not yet exist
-            // and should be created
-            let mut actions = this.check_preconditions().await?;
-
-            let partition_columns = this.get_partition_columns()?;
-
-            let state = match this.state {
-                Some(state) => SessionStateBuilder::new_from_existing(state.clone())
-                    .with_query_planner(Arc::new(write_planner))
-                    .build(),
-                None => {
-                    let state = SessionStateBuilder::new()
-                        .with_default_features()
-                        .with_query_planner(Arc::new(write_planner))
-                        .build();
-                    register_store(this.log_store.clone(), state.runtime_env().clone());
-                    state
-                }
-            };
-            let generated_col_expressions = this
-                .snapshot
-                .as_ref()
-                .map(|v| v.schema().get_generated_columns().unwrap_or_default())
-                .unwrap_or_default();
-
-            let mut schema_drift = false;
-            let source = DataFrame::new(state.clone(), this.input.unwrap().as_ref().clone());
-
-            // Add missing generated columns to source_df
-            let (mut source, missing_generated_columns) =
-                add_missing_generated_columns(source, &generated_col_expressions)?;
-
-            let source_schema: Arc<Schema> = Arc::new(source.schema().as_arrow().clone());
-
-            // Schema merging code should be aware of columns that can be generated during write
-            // so they might be empty in the batch, but the will exist in the input_schema()
-            // in this case we have to insert the generated column and it's type in the schema of the batch
-            let mut new_schema = None;
-            if let Some(snapshot) = &this.snapshot {
-                let table_schema = snapshot.input_schema()?;
-
-                if let Err(schema_err) =
-                    try_cast_schema(source_schema.fields(), table_schema.fields())
-                {
-                    schema_drift = true;
-                    if this.mode == SaveMode::Overwrite
-                        && this.schema_mode == Some(SchemaMode::Overwrite)
-                    {
-                        new_schema = None // we overwrite anyway, so no need to cast
-                    } else if this.schema_mode == Some(SchemaMode::Merge) {
-                        new_schema = Some(merge_arrow_schema(
-                            table_schema.clone(),
-                            source_schema.clone(),
-                            schema_drift,
-                        )?);
-                    } else {
-                        return Err(schema_err.into());
-                    }
-                } else if this.mode == SaveMode::Overwrite
-                    && this.schema_mode == Some(SchemaMode::Overwrite)
-                {
-                    new_schema = None // we overwrite anyway, so no need to cast
-                } else {
-                    // Schema needs to be merged so that utf8/binary/list types are preserved from the batch side if both table
-                    // and batch contains such type. Other types are preserved from the table side.
-                    // At this stage it will never introduce more fields since try_cast_batch passed correctly.
-                    new_schema = Some(merge_arrow_schema(
-                        table_schema.clone(),
-                        source_schema.clone(),
-                        schema_drift,
-                    )?);
-                }
-            }
-            if let Some(new_schema) = new_schema {
-                let mut schema_evolution_projection = Vec::new();
-                for field in new_schema.fields() {
-                    // If field exist in source data, we cast to new datatype
-                    if source_schema.index_of(field.name()).is_ok() {
-                        let cast_fn = if this.safe_cast { try_cast } else { cast };
-                        let cast_expr = cast_fn(
-                            Expr::Column(Column::from_name(field.name())),
-                            // col(field.name()),
-                            field.data_type().clone(),
-                        )
-                        .alias(field.name());
-                        schema_evolution_projection.push(cast_expr)
-                    // If field doesn't exist in source data, we insert the column
-                    // with null values
-                    } else {
-                        schema_evolution_projection.push(
-                            cast(
-                                lit(ScalarValue::Null).alias(field.name()),
-                                field.data_type().clone(),
-                            )
-                            .alias(field.name()),
-                        );
-                    }
-                }
-                source = source.select(schema_evolution_projection)?;
+            println!("Done with precommit?");
+            for action in precommit.data().actions.iter() {
+                println!("{:?}", action);
             }
 
-            source = add_generated_columns(
-                source,
-                &generated_col_expressions,
-                &missing_generated_columns,
-                &state,
-            )?;
-
-            let source = LogicalPlan::Extension(Extension {
-                node: Arc::new(MetricObserver {
-                    id: "write_source_count".into(),
-                    input: source.logical_plan().clone(),
-                    enable_pushdown: false,
-                }),
-            });
-
-            let mut source = DataFrame::new(state.clone(), source);
-
-            let schema = Arc::new(source.schema().as_arrow().clone());
-
-            // Maybe create schema action
-            if this.schema_mode == Some(SchemaMode::Merge) && schema_drift {
-                if let Some(snapshot) = &this.snapshot {
-                    let schema_struct: StructType = schema.clone().try_into()?;
-                    let current_protocol = snapshot.protocol();
-                    let configuration = snapshot.metadata().configuration.clone();
-                    let new_protocol = current_protocol
-                        .clone()
-                        .apply_column_metadata_to_protocol(&schema_struct)?
-                        .move_table_properties_into_features(&configuration);
-
-                    let mut metadata =
-                        Metadata::try_new(schema_struct, partition_columns.clone(), configuration)?;
-                    let existing_metadata_id = snapshot.metadata().id.clone();
-
-                    if !existing_metadata_id.is_empty() {
-                        metadata = metadata.with_table_id(existing_metadata_id);
-                    }
-                    let schema_action = Action::Metadata(metadata);
-                    actions.push(schema_action);
-                    if current_protocol != &new_protocol {
-                        actions.push(new_protocol.into())
-                    }
-                }
+            let opid = *precommit.opid();
+            let commit = precommit.await?;
+            
+            if let Some(handler) = custom_execute_handler {
+                handler.post_execute(&log_store, opid).await?;
             }
 
-            let (predicate_str, predicate) = match this.predicate {
-                Some(predicate) => {
-                    let pred = match predicate {
-                        Expression::DataFusion(expr) => expr,
-                        Expression::String(s) => {
-                            let df_schema = DFSchema::try_from(schema.as_ref().to_owned())?;
-                            parse_predicate_expression(&df_schema, s, &state)?
-                            // this.snapshot.unwrap().parse_predicate_expression(s, &state)?
-                        }
-                    };
-                    (Some(fmt_expr_to_sql(&pred)?), Some(pred))
-                }
-                _ => (None, None),
-            };
-
-            let config: Option<crate::table::config::TableConfig<'_>> = this
-                .snapshot
-                .as_ref()
-                .map(|snapshot| snapshot.table_config());
-
-            let target_file_size = this.target_file_size.or_else(|| {
-                Some(super::get_target_file_size(&config, &this.configuration) as usize)
-            });
-            let (num_indexed_cols, stats_columns) =
-                super::get_num_idx_cols_and_stats_columns(config, this.configuration);
-
-            let writer_stats_config = WriterStatsConfig {
-                num_indexed_cols,
-                stats_columns,
-            };
-
-            let mut contains_cdc = false;
-
-            // Collect remove actions if we are overwriting the table
-            if let Some(snapshot) = &this.snapshot {
-                if matches!(this.mode, SaveMode::Overwrite) {
-                    // Update metadata with new schema
-                    let table_schema = snapshot.input_schema()?;
-
-                    let delta_schema: StructType = schema.as_ref().try_into()?;
-                    if schema != table_schema {
-                        let mut metadata = snapshot.metadata().clone();
-
-                        metadata.schema_string = serde_json::to_string(&delta_schema)?;
-                        actions.push(Action::Metadata(metadata));
-                    }
-
-                    let configuration = snapshot.metadata().configuration.clone();
-                    let current_protocol = snapshot.protocol();
-                    let new_protocol = current_protocol
-                        .clone()
-                        .apply_column_metadata_to_protocol(&delta_schema)?
-                        .move_table_properties_into_features(&configuration);
-
-                    if current_protocol != &new_protocol {
-                        actions.push(new_protocol.into())
-                    }
-
-                    let deletion_timestamp = SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap()
-                        .as_millis() as i64;
-
-                    match &predicate {
-                        Some(pred) => {
-                            let (predicate_actions, cdf_df) = prepare_predicate_actions(
-                                pred.clone(),
-                                this.log_store.clone(),
-                                snapshot,
-                                state.clone(),
-                                partition_columns.clone(),
-                                this.writer_properties.clone(),
-                                deletion_timestamp,
-                                writer_stats_config.clone(),
-                                operation_id,
-                            )
-                            .await?;
-
-                            if let Some(cdf_df) = cdf_df {
-                                contains_cdc = true;
-                                source = source
-                                    .with_column(CDC_COLUMN_NAME, lit("insert"))?
-                                    .union(cdf_df)?;
-                            }
-
-                            if !predicate_actions.is_empty() {
-                                actions.extend(predicate_actions);
-                            }
-                        }
-                        _ => {
-                            let remove_actions = snapshot
-                                .log_data()
-                                .into_iter()
-                                .map(|p| p.remove_action(true).into());
-                            actions.extend(remove_actions);
-                        }
-                    };
-                }
-                metrics.num_removed_files = actions
-                    .iter()
-                    .filter(|a| a.action_type() == ActionType::Remove)
-                    .count();
-            }
-
-            let source_plan = source.clone().create_physical_plan().await?;
-
-            // Here we need to validate if the new data conforms to a predicate if one is provided
-            let add_actions = write_execution_plan_v2(
-                this.snapshot.as_ref(),
-                state.clone(),
-                source_plan.clone(),
-                partition_columns.clone(),
-                this.log_store.object_store(Some(operation_id)).clone(),
-                target_file_size,
-                this.write_batch_size,
-                this.writer_properties,
-                writer_stats_config.clone(),
-                predicate.clone(),
-                contains_cdc,
-            )
-            .await?;
-
-            let source_count =
-                find_metric_node(SOURCE_COUNT_ID, &source_plan).ok_or_else(|| {
-                    DeltaTableError::Generic("Unable to locate expected metric node".into())
-                })?;
-            let source_count_metrics = source_count.metrics().unwrap();
-            let num_added_rows = get_metric(&source_count_metrics, SOURCE_COUNT_METRIC);
-            metrics.num_added_rows = num_added_rows;
-
-            metrics.num_added_files = add_actions.len();
-            actions.extend(add_actions);
-
-            metrics.execution_time_ms =
-                Instant::now().duration_since(exec_start).as_millis() as u64;
-
-            let operation = DeltaOperation::Write {
-                mode: this.mode,
-                partition_by: if !partition_columns.is_empty() {
-                    Some(partition_columns)
-                } else {
-                    None
-                },
-                predicate: predicate_str,
-            };
-
-            let mut commit_properties = this.commit_properties.clone();
-            commit_properties.app_metadata.insert(
-                "operationMetrics".to_owned(),
-                serde_json::to_value(&metrics)?,
-            );
-
-            let commit = CommitBuilder::from(commit_properties)
-                .with_actions(actions)
-                .with_post_commit_hook_handler(this.custom_execute_handler.clone())
-                .with_operation_id(operation_id)
-                .build(
-                    this.snapshot.as_ref().map(|f| f as &dyn TableReference),
-                    this.log_store.clone(),
-                    operation.clone(),
-                )
-                .await?;
-
-            if let Some(handler) = this.custom_execute_handler {
-                handler.post_execute(&this.log_store, operation_id).await?;
-            }
-
-            Ok(DeltaTable::new_with_state(this.log_store, commit.snapshot))
+            Ok(DeltaTable::new_with_state(log_store, commit.snapshot))
         })
+    }
+}
+
+impl WriteBuilder {
+    /// Runs through the precommit preparation steps and returns a vector of actions,
+    /// without finalizing (awaiting) the commit.
+    pub async fn get_precommit_actions(self) -> DeltaResult<Vec<Action>> {
+        // Call the helper subroutine to prepare the precommit.
+        let precommit = WriteBuilder::prepare_precommit(self).await?;
+        
+        // Optionally, print the actions for debugging.
+        println!("Done with precommit?");
+        for action in precommit.data().actions.iter() {
+            println!("{:?}", action);
+        }
+        
+        // Return a cloned vector of actions from the commit data.
+        Ok(precommit.data().actions.clone())
     }
 }
 

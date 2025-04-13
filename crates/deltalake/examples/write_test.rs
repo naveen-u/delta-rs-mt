@@ -6,6 +6,7 @@ use deltalake::arrow::{
 };
 use deltalake::DeltaOps;
 
+use deltalake::kernel::{Action, CommitInfo, EagerSnapshot, Metadata, Protocol, Transaction};
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), deltalake::errors::DeltaTableError> {
     // Open the existing Delta table with checkpoint.
@@ -27,10 +28,21 @@ async fn main() -> Result<(), deltalake::errors::DeltaTableError> {
     let batch = RecordBatch::try_new(schema, vec![Arc::new(version_array)])?;
     
     // Write the new record batch to the existing Delta table.
-    let table = DeltaOps(table)
-        .write(vec![batch])
-        .await?;
+    // let table = DeltaOps(table)
+    //     .write(vec![batch])
+    //     .await?;
+
+    let actions = DeltaOps(table)
+        .write_tgroup(vec![batch])
+        .get_precommit_actions().await?;
+
+    // Display the commit actions.
+    println!("Precommit actions: {:#?}", actions);
+
+
+
+    //write_tgroup().return_actions();
     
-    println!("Delta table written successfully. Current version: {}", table.version());
+    // println!("Delta table written successfully. Current version: {}", table.version());
     Ok(())
 }

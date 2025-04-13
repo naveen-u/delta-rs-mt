@@ -536,6 +536,19 @@ pub struct PreCommit<'a> {
     init_version: Option<i64>,
 }
 
+
+impl<'a> PreCommit<'a> {
+    pub fn data(&self) -> &CommitData {
+        &self.data
+    }
+}
+
+impl<'a> PreCommit<'a> {
+    pub fn opid(&self) -> &Uuid {
+        &*&self.operation_id
+    }
+}
+
 impl<'a> std::future::IntoFuture for PreCommit<'a> {
     type Output = DeltaResult<FinalizedCommit>;
     type IntoFuture = BoxFuture<'a, Self::Output>;
@@ -924,6 +937,7 @@ pub struct FinalizedCommit {
     /// Metrics associated with the commit operation
     pub metrics: Metrics,
 }
+
 
 impl FinalizedCommit {
     /// The new table state after a commit

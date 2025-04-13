@@ -1,0 +1,1073 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in library 'deltalake_aws'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=deltalake-aws"
+                ],
+                "filter": {
+                    "name": "deltalake_aws",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'common'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=common",
+                    "--package=deltalake-aws"
+                ],
+                "filter": {
+                    "name": "common",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'integration_read'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=integration_read",
+                    "--package=deltalake-aws"
+                ],
+                "filter": {
+                    "name": "integration_read",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'integration_s3_dynamodb'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=integration_s3_dynamodb",
+                    "--package=deltalake-aws"
+                ],
+                "filter": {
+                    "name": "integration_s3_dynamodb",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'repair_s3_rename_test'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=repair_s3_rename_test",
+                    "--package=deltalake-aws"
+                ],
+                "filter": {
+                    "name": "repair_s3_rename_test",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in library 'deltalake_core'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=deltalake-core"
+                ],
+                "filter": {
+                    "name": "deltalake_core",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'checkpoint_writer'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=checkpoint_writer",
+                    "--package=deltalake-core"
+                ],
+                "filter": {
+                    "name": "checkpoint_writer",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'command_filesystem_check'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=command_filesystem_check",
+                    "--package=deltalake-core"
+                ],
+                "filter": {
+                    "name": "command_filesystem_check",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'command_merge'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=command_merge",
+                    "--package=deltalake-core"
+                ],
+                "filter": {
+                    "name": "command_merge",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'command_optimize'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=command_optimize",
+                    "--package=deltalake-core"
+                ],
+                "filter": {
+                    "name": "command_optimize",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'command_restore'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=command_restore",
+                    "--package=deltalake-core"
+                ],
+                "filter": {
+                    "name": "command_restore",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'command_vacuum'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=command_vacuum",
+                    "--package=deltalake-core"
+                ],
+                "filter": {
+                    "name": "command_vacuum",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'commit_info_format'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=commit_info_format",
+                    "--package=deltalake-core"
+                ],
+                "filter": {
+                    "name": "commit_info_format",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'integration'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=integration",
+                    "--package=deltalake-core"
+                ],
+                "filter": {
+                    "name": "integration",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'integration_checkpoint'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=integration_checkpoint",
+                    "--package=deltalake-core"
+                ],
+                "filter": {
+                    "name": "integration_checkpoint",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'integration_datafusion'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=integration_datafusion",
+                    "--package=deltalake-core"
+                ],
+                "filter": {
+                    "name": "integration_datafusion",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'read_delta_log_test'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=read_delta_log_test",
+                    "--package=deltalake-core"
+                ],
+                "filter": {
+                    "name": "read_delta_log_test",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'read_delta_partitions_test'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=read_delta_partitions_test",
+                    "--package=deltalake-core"
+                ],
+                "filter": {
+                    "name": "read_delta_partitions_test",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'time_travel'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=time_travel",
+                    "--package=deltalake-core"
+                ],
+                "filter": {
+                    "name": "time_travel",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in library 'deltalake_test'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=deltalake-test"
+                ],
+                "filter": {
+                    "name": "deltalake_test",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in library 'deltalake_azure'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=deltalake-azure"
+                ],
+                "filter": {
+                    "name": "deltalake_azure",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'context'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=context",
+                    "--package=deltalake-azure"
+                ],
+                "filter": {
+                    "name": "context",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'integration'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=integration",
+                    "--package=deltalake-azure"
+                ],
+                "filter": {
+                    "name": "integration",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'merge'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=merge",
+                    "--package=delta-benchmarks"
+                ],
+                "filter": {
+                    "name": "merge",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'merge'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=merge",
+                    "--package=delta-benchmarks"
+                ],
+                "filter": {
+                    "name": "merge",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in library 'deltalake_catalog_glue'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=deltalake-catalog-glue"
+                ],
+                "filter": {
+                    "name": "deltalake_catalog_glue",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug example 'demo'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--example=demo",
+                    "--package=deltalake-catalog-glue"
+                ],
+                "filter": {
+                    "name": "demo",
+                    "kind": "example"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in example 'demo'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--example=demo",
+                    "--package=deltalake-catalog-glue"
+                ],
+                "filter": {
+                    "name": "demo",
+                    "kind": "example"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in library 'deltalake_catalog_unity'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=deltalake-catalog-unity"
+                ],
+                "filter": {
+                    "name": "deltalake_catalog_unity",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug example 'uc_example'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--example=uc_example",
+                    "--package=deltalake-catalog-unity"
+                ],
+                "filter": {
+                    "name": "uc_example",
+                    "kind": "example"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in example 'uc_example'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--example=uc_example",
+                    "--package=deltalake-catalog-unity"
+                ],
+                "filter": {
+                    "name": "uc_example",
+                    "kind": "example"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in library 'deltalake_gcp'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=deltalake-gcp"
+                ],
+                "filter": {
+                    "name": "deltalake_gcp",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'context'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=context",
+                    "--package=deltalake-gcp"
+                ],
+                "filter": {
+                    "name": "context",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'integration'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=integration",
+                    "--package=deltalake-gcp"
+                ],
+                "filter": {
+                    "name": "integration",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in library 'deltalake'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=deltalake"
+                ],
+                "filter": {
+                    "name": "deltalake",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug example 'basic_operations'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--example=basic_operations",
+                    "--package=deltalake"
+                ],
+                "filter": {
+                    "name": "basic_operations",
+                    "kind": "example"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in example 'basic_operations'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--example=basic_operations",
+                    "--package=deltalake"
+                ],
+                "filter": {
+                    "name": "basic_operations",
+                    "kind": "example"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug example 'load_table'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--example=load_table",
+                    "--features=datafusion",
+                    "--package=deltalake"
+                ],
+                "filter": {
+                    "name": "load_table",
+                    "kind": "example"
+                }
+            },
+            "args": [],
+            "cwd": "/home/gnilay/si330v2/delta/delta-rs-mt/crates"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in example 'load_table'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--example=load_table",
+                    "--package=deltalake"
+                ],
+                "filter": {
+                    "name": "load_table",
+                    "kind": "example"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug example 'read_delta_table'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--example=read_delta_table",
+                    "--features=datafusion",
+                    "--package=deltalake"
+                ],
+                "filter": {
+                    "name": "read_delta_table",
+                    "kind": "example"
+                }
+            },
+            "args": [],
+            "cwd": "/Users/anirudhbhaskar/delta-rs-mt/delta-rs-mt/crates"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in example 'read_delta_table'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--example=read_delta_table",
+                    "--package=deltalake"
+                ],
+                "filter": {
+                    "name": "read_delta_table",
+                    "kind": "example"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug example 'recordbatch-writer'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--features=datafusion",
+                    "--example=recordbatch-writer",
+                    "--package=deltalake"
+                ],
+                "filter": {
+                    "name": "recordbatch-writer",
+                    "kind": "example"
+                }
+            },
+            "args": [],
+            "cwd": "/Users/anirudhbhaskar/delta-rs-mt/delta-rs-mt/crates",
+            "env": {
+                "TABLE_URI": "test/tests/data/simple_table_with_checkpoint"
+            }
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in example 'recordbatch-writer'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--example=recordbatch-writer",
+                    "--package=deltalake"
+                ],
+                "filter": {
+                    "name": "recordbatch-writer",
+                    "kind": "example"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in library 'deltalake_hdfs'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=deltalake-hdfs"
+                ],
+                "filter": {
+                    "name": "deltalake_hdfs",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'context'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=context",
+                    "--package=deltalake-hdfs"
+                ],
+                "filter": {
+                    "name": "context",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'integration'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=integration",
+                    "--package=deltalake-hdfs"
+                ],
+                "filter": {
+                    "name": "integration",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in library 'deltalake_lakefs'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=deltalake-lakefs"
+                ],
+                "filter": {
+                    "name": "deltalake_lakefs",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'context'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=context",
+                    "--package=deltalake-lakefs"
+                ],
+                "filter": {
+                    "name": "context",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'integration'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=integration",
+                    "--package=deltalake-lakefs"
+                ],
+                "filter": {
+                    "name": "integration",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in library 'deltalake_mount'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=deltalake-mount"
+                ],
+                "filter": {
+                    "name": "deltalake_mount",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'context'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=context",
+                    "--package=deltalake-mount"
+                ],
+                "filter": {
+                    "name": "context",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'integration'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=integration",
+                    "--package=deltalake-mount"
+                ],
+                "filter": {
+                    "name": "integration",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in library 'deltalake_sql'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=deltalake-sql"
+                ],
+                "filter": {
+                    "name": "deltalake_sql",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'delta-inspect'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=delta-inspect",
+                    "--package=delta-inspect"
+                ],
+                "filter": {
+                    "name": "delta-inspect",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug 'write_test.rs'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--example=write_test",
+                    "--features=datafusion",
+                    "--package=deltalake"
+                ],
+                "filter": {
+                    "name": "write_test",
+                    "kind": "example"
+                }
+            },
+            "args": [],
+            "cwd": "/Users/anirudhbhaskar/delta-rs-mt/delta-rs-mt/crates",
+            "env": {
+                "TABLE_URI": "test/tests/data/simple_table_with_checkpoint"
+            }
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'delta-inspect'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=delta-inspect",
+                    "--package=delta-inspect"
+                ],
+                "filter": {
+                    "name": "delta-inspect",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}

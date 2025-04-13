@@ -214,6 +214,14 @@ impl DeltaOps {
         WriteBuilder::new(self.0.log_store, self.0.state).with_input_batches(batches)
     }
 
+    #[cfg(feature = "datafusion")]
+    #[must_use]
+    pub fn write_tgroup(self, batches: impl IntoIterator<Item = RecordBatch>) -> WriteBuilder {
+        WriteBuilder::new(self.0.log_store, self.0.state).with_input_batches(batches)
+    }
+
+    //write_tgroup
+
     /// Vacuum stale files from delta table
     #[must_use]
     pub fn vacuum(self) -> VacuumBuilder {
