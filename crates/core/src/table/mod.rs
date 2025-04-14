@@ -24,6 +24,9 @@ use crate::kernel::{
 use crate::logstore::{extract_version_from_filename, logstore_for, LogStoreConfig, LogStoreRef};
 use crate::partitions::PartitionFilter;
 use crate::storage::{commit_uri_from_version, ObjectStoreRef};
+use crate::tgroup::{
+    create_initial_tgroup_checkpoint, finalize_add_to_tgroup, initiate_add_to_tgroup,
+};
 use crate::{DeltaResult, DeltaTableError};
 
 // NOTE: this use can go away when peek_next_commit is removed off of [DeltaTable]
@@ -414,7 +417,6 @@ impl DeltaTable {
 
     /// Load DeltaTable with data from latest checkpoint
     pub async fn load(&mut self) -> Result<(), DeltaTableError> {
-        
         self.update_incremental(None).await
     }
 
@@ -661,6 +663,14 @@ impl DeltaTable {
         }
 
         self.load_version(version).await
+    }
+
+    pub async fn add_to_tgroup(&mut self, tgroup_uri: &str) -> Result<(), DeltaTableError> {
+        self.init_tgroup(tgroup_uri).await?;
+        let init_commit = initiate_add_to_tgroup(&self, tgroup_uri).await?;
+        create_initial_tgroup_checkpoint(&self, tgroup_uri).await?;
+        finalize_add_to_tgroup(&self, tgroup_uri, init_commit.version).await?;
+        Ok(())
     }
 }
 
