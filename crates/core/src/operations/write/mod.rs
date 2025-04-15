@@ -759,18 +759,22 @@ impl std::future::IntoFuture for WriteBuilder {
 impl WriteBuilder {
     /// Runs through the precommit preparation steps and returns a vector of actions,
     /// without finalizing (awaiting) the commit.
-    pub async fn get_precommit_actions(self) -> DeltaResult<Vec<Action>> {
+    pub async fn get_precommit(self) ->  DeltaResult<PreCommit<'static>>
+    {
         // Call the helper subroutine to prepare the precommit.
         let precommit = WriteBuilder::prepare_precommit(self).await?;
         
         // Optionally, print the actions for debugging.
         println!("Done with precommit?");
-        for action in precommit.data().actions.iter() {
-            println!("{:?}", action);
-        }
-        
-        // Return a cloned vector of actions from the commit data.
-        Ok(precommit.data().actions.clone())
+        // for action in precommit.data().actions.iter() {
+        //     println!("{:?}", action);
+        // }
+
+        // let boxed = Box::new(precommit);
+        // Ok(Box::leak(boxed))
+
+        Ok(precommit)
+
     }
 }
 

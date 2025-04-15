@@ -76,11 +76,11 @@ impl Snapshot {
     ) -> DeltaResult<Self> {
         let log_segment = LogSegment::try_new(table_root, version, store.as_ref()).await?;
         let (protocol, metadata) = log_segment.read_metadata(store.clone(), &config).await?;
-        if metadata.is_none() || protocol.is_none() {
-            return Err(DeltaTableError::Generic(
-                "Cannot read metadata from log segment".into(),
-            ));
-        };
+        // if metadata.is_none() || protocol.is_none() {
+        //     return Err(DeltaTableError::Generic(
+        //         "Cannot read metadata from log segment".into(),
+        //     ));
+        // };
         let (metadata, protocol) = (metadata.unwrap(), protocol.unwrap());
         let schema = serde_json::from_str(&metadata.schema_string)?;
         Ok(Self {
@@ -990,6 +990,7 @@ mod tests {
                     deletion_vector: add.deletion_vector.clone(),
                     base_row_id: add.base_row_id,
                     default_row_commit_version: add.default_row_commit_version,
+                    tableuuid: None, // added
                 }
                 .into()
             })

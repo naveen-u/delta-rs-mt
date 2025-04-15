@@ -221,6 +221,7 @@ mod tests {
             base_row_id: None,
             default_row_commit_version: None,
             size: None,
+            tableuuid: None, // <-- Added this line to set tableuuid to None
         }));
     }
 
@@ -338,6 +339,7 @@ mod tests {
             default_row_commit_version: None,
             deletion_vector: None,
             tags: Some(HashMap::new()),
+            tableuuid: None, // <-- Added this line to set tableuuid to None
         }));
     }
 

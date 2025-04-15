@@ -283,7 +283,7 @@ impl TableReference for DeltaTableState {
 }
 
 /// Data that was actually written to the log store.
-#[derive(Debug)]
+#[derive(Debug,Clone)]
 pub struct CommitData {
     /// The actions
     pub actions: Vec<Action>,
@@ -525,6 +525,7 @@ impl<'a> CommitBuilder {
 }
 
 /// Represents a commit that has not yet started but all details are finalized
+#[derive(Clone)]
 pub struct PreCommit<'a> {
     log_store: LogStoreRef,
     table_data: Option<&'a dyn TableReference>,
@@ -541,6 +542,9 @@ impl<'a> PreCommit<'a> {
     pub fn data(&self) -> &CommitData {
         &self.data
     }
+
+    pub fn data_mut(&mut self) -> &mut CommitData {
+        &mut self.data    }
 }
 
 impl<'a> PreCommit<'a> {

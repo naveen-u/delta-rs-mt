@@ -15,13 +15,7 @@ use deltalake_core::{
     arrow::{
         self,
         datatypes::{DataType, Field},
-    },
-    datafusion::prelude::{CsvReadOptions, SessionContext},
-    delta_datafusion::{DeltaScanConfig, DeltaTableProvider},
-    operations::delete::DeleteMetrics,
-    operations::merge::{MergeBuilder, MergeMetrics},
-    operations::update::UpdateMetrics,
-    DeltaOps, DeltaTable, DeltaTableBuilder, DeltaTableError, ObjectStore, Path,
+    }, datafusion::prelude::{CsvReadOptions, SessionContext}, delta_datafusion::{DeltaScanConfig, DeltaTableProvider}, kernel::Action, operations::{delete::DeleteMetrics, merge::{MergeBuilder, MergeMetrics}, update::UpdateMetrics}, DeltaOps, DeltaTable, DeltaTableBuilder, DeltaTableError, ObjectStore, Path
 };
 use deltalake_core::{operations::transaction::PreCommit, protocol::SaveMode};
 use serde_json::json;
@@ -285,8 +279,8 @@ async fn benchmark_merge_tpcds_nocommit(
     path: String,
     parameters: MergePerfParams,
     merge: fn(DataFrame, DeltaTable) -> Result<MergeBuilder, DeltaTableError>,
-) -> Result<(core::time::Duration, MergeMetrics, PreCommit), DataFusionError> {
-    let table = DeltaTableBuilder::from_uri(path).load().await?;
+) -> Result<(core::time::Duration, MergeMetrics, &'static mut PreCommit<'static>), DataFusionError> {
+    let table = DeltaTableBuilder::from_uri(path.clone()).load().await?;
     let file_count = table.snapshot()?.files_count();
 
     let provider = DeltaTableProvider::try_new(
@@ -335,7 +329,10 @@ async fn benchmark_merge_tpcds_nocommit(
     let source = matched.union(not_matched)?;
 
     let start = Instant::now();
-    let (table, metrics, pre_commit) = merge(source, table)?.await?; // TODO: return precommit
+    let merge_builder = merge(source, table)?;
+    let merge_builder_static: &'static MergeBuilder = Box::leak(Box::new(merge_builder));
+    let (precommit, metrics) = merge_builder_static.tgroup_commit().await?;
+    // let (precommit, metrics) = merge(source, table)?.tgroup_commit().await?; // TODO: return precommit
     let end = Instant::now();
 
     let duration = end.duration_since(start);
@@ -344,6 +341,8 @@ async fn benchmark_merge_tpcds_nocommit(
     println!("File sample count: {file_sample_count}");
     println!("{metrics:?}");
     println!("Seconds: {}", duration.as_secs_f32());
+
+    let table = DeltaTableBuilder::from_uri(path).load().await?;
 
     // Clean up and restore to original state.
     let (table, _) = DeltaOps(table).restore().with_version_to_restore(0).await?;
@@ -369,12 +368,30 @@ async fn benchmark_merge_tpcds_nocommit(
         .delete(&Path::parse("_delta_log/00000000000000000004.json")?)
         .await;
 
-    Ok((duration, metrics))
+    let owned_precommit: &'static mut PreCommit<'static> = Box::leak(Box::new(precommit));
+    Ok((duration, metrics, owned_precommit))
 }
 
-async fn tgroup_commit(pre_commits: Vec<PreCommit>) -> core::time::Duration {
+async fn tgroup_commit(pre_commits: Vec<PreCommit<'static>>) -> core::time::Duration {
     let start = Instant::now();
     // TODO: Commit tgroup
+    let mut combined_actions: Vec<Action> = Vec::new();
+
+    // Process every provided precommit.
+    for precommit in pre_commits.iter(){
+
+        for action in precommit.data().actions.iter() {
+            combined_actions.push(action.clone());
+        }
+    }
+
+    let mut combined_precommit = pre_commits.into_iter().next()
+        .expect("No precommits provided");
+    combined_precommit.data_mut().actions = combined_actions;
+
+    combined_precommit.await;
+    // println!("Final commit version: {}", final_commit.snapshot.version());
+
     return Instant::now().duration_since(start);
 }
 
@@ -861,10 +878,10 @@ async fn main() {
 
             for bench in benches {
                 for sample in 0..num_samples {
-                    let mut pre_commits: Vec<PreCommit> = vec![];
+                    let mut pre_commits: Vec<&mut PreCommit> = vec![];
                     for &table in &tables[0..(bench.txn_count as usize)] {
                         println!("Test: {} Sample: {sample}", bench.name);
-                        let res: (std::time::Duration, MergeMetrics, PreCommit) =
+                        let res: (std::time::Duration, MergeMetrics, &mut PreCommit) =
                             benchmark_merge_tpcds_nocommit(
                                 String::from(table),
                                 bench.params.clone(),
@@ -881,7 +898,13 @@ async fn main() {
                         duration_ms.push(res.0.as_millis() as u32);
                         data.push(json!(res.1).to_string());
                     }
-                    let duration = tgroup_commit(pre_commits).await;
+                    let owned_precommits: Vec<PreCommit<'static>> = pre_commits
+                        .into_iter()
+                        .map(|p| p.clone())
+                        .collect();
+                    let duration = tgroup_commit(owned_precommits).await;
+
+                    // let duration: std::time::Duration = tgroup_commit(pre_commits).await;
                     group_ids.push(group_id.clone());
                     name.push(format!("{}_{}", bench.name.clone(), "commit"));
                     samples.push(sample);

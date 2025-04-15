@@ -207,6 +207,7 @@ impl std::future::IntoFuture for ConstraintBuilder {
                         current_features
                     }
                 },
+                tableuuid: None, // <-- Added this line to set tableuuid to None
             };
 
             let operation = DeltaOperation::AddConstraint {

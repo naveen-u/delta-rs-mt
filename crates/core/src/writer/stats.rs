@@ -66,6 +66,7 @@ pub fn create_add(
         default_row_commit_version: None,
         stats_parsed: None,
         clustering_provider: None,
+        tableuuid: None, // <-- Added this line to set tableuuid to None
     })
 }
 

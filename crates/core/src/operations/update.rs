@@ -430,6 +430,7 @@ async fn execute(
             tags: None,
             base_row_id: None,
             default_row_commit_version: None,
+            tableuuid: None, // <-- Added this line to set tableuuid to None
         }))
     }
 

@@ -72,6 +72,9 @@ pub struct Metadata {
     pub created_time: Option<i64>,
     /// Configuration options for the metadata action
     pub configuration: HashMap<String, Option<String>>,
+    /// Table UUID for the commit T-group commits
+    pub tableuuid: Option<String>,
+
 }
 
 impl Metadata {
@@ -90,6 +93,7 @@ impl Metadata {
             name: None,
             description: None,
             created_time: Some(chrono::Utc::now().timestamp_millis()),
+            tableuuid: None, // added
         })
     }
 
@@ -154,6 +158,8 @@ pub struct Protocol {
     /// write this table (exist only when minWriterVersion is set to 7)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub writer_features: Option<HashSet<WriterFeatures>>,
+    /// Table UUID for the commit T-group commits
+    pub tableuuid: Option<String>,
 }
 
 impl Protocol {
@@ -164,6 +170,7 @@ impl Protocol {
             min_writer_version,
             reader_features: None,
             writer_features: None,
+            tableuuid: None, // <-- Added this line to set tableuuid to None
         }
     }
 
@@ -798,6 +805,8 @@ pub struct Add {
     /// This field is only available in add action records read from checkpoints
     #[serde(skip_serializing, skip_deserializing)]
     pub stats_parsed: Option<parquet::record::Row>,
+    /// Table UUID for the commit T-group commits
+    pub tableuuid: Option<String>,
 }
 
 /// Represents a tombstone (deleted file) in the Delta log.
@@ -849,6 +858,8 @@ pub struct Remove {
     /// First commit version in which an add action with the same path was committed to the table.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_row_commit_version: Option<i64>,
+    /// Table UUID for the commit T-group commits
+    pub tableuuid: Option<String>,
 }
 
 /// Delta AddCDCFile action that describes a parquet CDC data file.
@@ -888,6 +899,8 @@ pub struct Transaction {
     /// The time when this transaction action was created in milliseconds since the Unix epoch.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_updated: Option<i64>,
+    /// Table UUID for the commit T-group commits
+    pub tableuuid: Option<String>,
 }
 
 impl Transaction {
@@ -906,6 +919,7 @@ impl Transaction {
             app_id: app_id.to_string(),
             version,
             last_updated,
+            tableuuid: None, // <-- Added this line to set tableuuid to None
         }
     }
 }
@@ -959,6 +973,8 @@ pub struct CommitInfo {
     /// User defined metadata
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_metadata: Option<String>,
+    /// Table UUID for the commit T-group commits
+    pub tableuuid: Option<String>,
 }
 
 /// The domain metadata action contains a configuration (string) for a named metadata domain

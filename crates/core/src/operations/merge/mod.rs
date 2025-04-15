@@ -55,6 +55,10 @@ use datafusion_expr::{
     Extension, LogicalPlan, LogicalPlanBuilder, UserDefinedLogicalNode, UNNAMED_TABLE,
 };
 
+
+use crate::operations::transaction::PreCommit;
+
+
 use delta_kernel::schema::{ColumnMetadataKey, StructType};
 use filter::try_construct_early_filter;
 use futures::future::BoxFuture;
@@ -162,6 +166,56 @@ impl super::Operation<()> for MergeBuilder {
 }
 
 impl MergeBuilder {
+
+
+    pub async fn tgroup_commit<'a>(&'a self) -> DeltaResult<(PreCommit<'a>, MergeMetrics)>  {
+        let this = self;
+
+        // Box::pin(async move {
+            PROTOCOL.can_write_to(&this.snapshot.snapshot)?;
+
+            if !this.snapshot.load_config().require_files {
+                return Err(DeltaTableError::NotInitializedWithFiles("MERGE".into()));
+            }
+
+            let operation_id = this.get_operation_id();
+            this.pre_execute(operation_id).await?;
+
+            let state = this.state.as_ref().unwrap();
+            // .unwrap_or_else(|| {
+            //     let config: SessionConfig = DeltaSessionConfig::default().into();
+            //     let session = SessionContext::new_with_config(config);
+
+            //     // If a user provides their own their DF state then they must register the store themselves
+            //     register_store(this.log_store.clone(), session.runtime_env());
+
+            //     &session.state()
+            // });
+
+            let res = execute_precommit(
+                this.predicate.clone(),
+                this.source.clone(),
+                this.log_store.clone(),
+                &this.snapshot,
+                state.clone(),
+                this.writer_properties.clone(),
+                this.commit_properties.clone(),
+                this.safe_cast,
+                this.streaming,
+                this.source_alias.clone(),
+                this.target_alias.clone(),
+                this.merge_schema,
+                this.match_operations.clone(),
+                this.not_match_operations.clone(),
+                this.not_match_source_operations.clone(),
+                operation_id,
+                this.custom_execute_handler.as_ref(),
+            )
+            .await?;
+        Ok(res)
+    }
+
+
     /// Create a new [`MergeBuilder`]
     pub fn new<E: Into<Expression>>(
         log_store: LogStoreRef,
@@ -506,6 +560,7 @@ enum OperationType {
 }
 
 //Encapsute the User's Merge configuration for later processing
+#[derive(Clone)]
 struct MergeOperationConfig {
     /// Which records to update
     predicate: Option<Expression>,
@@ -716,12 +771,41 @@ impl ExtensionPlanner for MergeMetricExtensionPlanner {
     }
 }
 
+
+fn update_action_with_tableuuid(action: &mut Action, table_uuid: String) {
+    match action {
+        Action::Metadata(meta) => {
+            meta.tableuuid = Some(table_uuid)
+        }
+        Action::Txn(txn) => {
+            txn.tableuuid = Some(table_uuid)
+        }
+        Action::CommitInfo(ci) => {
+            ci.tableuuid = Some(table_uuid)
+        }
+        Action::Remove(rem) => {
+            rem.tableuuid = Some(table_uuid)
+        }
+        Action::Add(add) => {
+            add.tableuuid = Some(table_uuid)
+        }
+        Action::Protocol(proto) => {
+            proto.tableuuid = Some(table_uuid)
+        }
+        // For all other Action variants that do not have a tableuuid field,
+        // simply clone the action.
+        _ => {},
+    }
+}
+
+
+
 #[allow(clippy::too_many_arguments)]
-async fn execute(
+async fn execute_precommit<'a>(
     predicate: Expression,
     source: DataFrame,
     log_store: LogStoreRef,
-    snapshot: DeltaTableState,
+    snapshot: &'a DeltaTableState,
     _state: SessionState,
     writer_properties: Option<WriterProperties>,
     mut commit_properties: CommitProperties,
@@ -735,7 +819,7 @@ async fn execute(
     not_match_source_operations: Vec<MergeOperationConfig>,
     operation_id: Uuid,
     handle: Option<&Arc<dyn CustomExecuteHandler>>,
-) -> DeltaResult<(DeltaTableState, MergeMetrics)> {
+) -> DeltaResult<(PreCommit<'a>, MergeMetrics)> {
     let mut metrics = MergeMetrics::default();
     let exec_start = Instant::now();
     // Determining whether we should write change data once so that computation of change data can
@@ -1429,17 +1513,71 @@ async fn execute(
     };
 
     if actions.is_empty() {
-        return Ok((snapshot, metrics));
+        return Err(DeltaTableError::Generic("Nothing to commit".into()));
     }
 
-    let commit = CommitBuilder::from(commit_properties)
+    let mut precommit = CommitBuilder::from(commit_properties)
         .with_actions(actions)
         .with_operation_id(operation_id)
         .with_post_commit_hook_handler(handle.cloned())
-        .build(Some(&snapshot), log_store.clone(), operation)
-        .await?;
+        .build(Some(snapshot), log_store.clone(), operation);
+
+    
+    for mut action in precommit.data_mut().actions.iter_mut() {
+        update_action_with_tableuuid(&mut action, String::from(&snapshot.metadata().id));
+    }
+
+
+    
+    Ok((precommit, metrics))
+}
+
+async fn execute(
+    predicate: Expression,
+    source: DataFrame,
+    log_store: LogStoreRef,
+    snapshot: DeltaTableState,
+    _state: SessionState,
+    writer_properties: Option<WriterProperties>,
+    mut commit_properties: CommitProperties,
+    _safe_cast: bool,
+    streaming: bool,
+    source_alias: Option<String>,
+    target_alias: Option<String>,
+    merge_schema: bool,
+    match_operations: Vec<MergeOperationConfig>,
+    not_match_target_operations: Vec<MergeOperationConfig>,
+    not_match_source_operations: Vec<MergeOperationConfig>,
+    operation_id: Uuid,
+    handle: Option<&Arc<dyn CustomExecuteHandler>>,
+) -> DeltaResult<(DeltaTableState, MergeMetrics)> {
+    // Await the precommit to finalize the commit.
+    let result = execute_precommit(predicate, source,
+        log_store,
+        &snapshot,
+        _state,
+        writer_properties,
+        commit_properties,
+        _safe_cast,
+        streaming,
+        source_alias,
+        target_alias,
+        merge_schema,
+        match_operations,
+        not_match_target_operations,
+        not_match_source_operations,
+        operation_id,
+        handle).await?;
+
+    let (precommit, metrics) = result;
+
+    let commit = precommit.await?;
+
+    
+    // Return the snapshot from the finalized commit together with the metrics.
     Ok((commit.snapshot(), metrics))
 }
+
 
 fn modify_schema(
     ending_schema: &mut SchemaBuilder,

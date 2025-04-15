@@ -40,6 +40,7 @@ pub(super) fn read_metadata(batch: &dyn ProvidesColumnByName) -> DeltaResult<Opt
                         .and_then(|pv| collect_map(&pv.value(idx)).map(|m| m.collect()))
                         .unwrap_or_default(),
                     created_time: ex::read_primitive_opt(created_time, idx),
+                    tableuuid: None, // <-- Added this line to set tableuuid to None
                 }));
             }
         }
@@ -76,6 +77,7 @@ pub(super) fn read_protocol(batch: &dyn ProvidesColumnByName) -> DeltaResult<Opt
                             .filter_map(|v| v.ok())
                             .collect()
                     }),
+                    tableuuid: None, // <-- Added this line to set tableuuid to None
                 }));
             }
         }
@@ -161,6 +163,7 @@ pub(super) fn read_adds(array: &dyn ProvidesColumnByName) -> DeltaResult<Vec<Add
                     default_row_commit_version: None,
                     clustering_provider: None,
                     stats_parsed: None,
+                    tableuuid: None, // <-- Added this line to set tableuuid to None
                 });
             }
         }
@@ -285,6 +288,7 @@ pub(super) fn read_removes(array: &dyn ProvidesColumnByName) -> DeltaResult<Vec<
                     deletion_vector: get_dv(i),
                     base_row_id: None,
                     default_row_commit_version: None,
+                    tableuuid: None, // <-- Added this line to set tableuuid to None
                 });
             }
         }

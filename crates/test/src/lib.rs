@@ -136,6 +136,7 @@ pub async fn add_file(
             base_row_id: None,
             deletion_vector: None,
             clustering_provider: None,
+            tableuuid: None, // added
         };
         let operation = DeltaOperation::Write {
             mode: SaveMode::Append,
@@ -176,6 +177,7 @@ pub async fn remove_file(
         default_row_commit_version: None,
         base_row_id: None,
         tags: None,
+        tableuuid: None, // added
     };
     let operation = DeltaOperation::Delete { predicate: None };
     let actions = vec![Action::Remove(remove)];

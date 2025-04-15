@@ -293,6 +293,7 @@ impl CreateBuilder {
             min_writer_version: PROTOCOL.default_writer_version(),
             reader_features: None,
             writer_features: None,
+            tableuuid: None, // <-- Added this line to set tableuuid to None
         };
 
         let protocol = self
@@ -493,6 +494,7 @@ mod tests {
             min_writer_version: 0,
             writer_features: None,
             reader_features: None,
+            tableuuid: None, // <-- Added this line to set tableuuid to None
         };
         let table = CreateBuilder::new()
             .with_location("memory://")

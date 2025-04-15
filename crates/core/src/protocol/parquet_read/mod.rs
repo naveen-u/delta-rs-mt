@@ -113,6 +113,7 @@ impl Add {
             default_row_commit_version: None,
             tags: None,
             clustering_provider: None,
+            tableuuid: None, // <-- Added this line to set tableuuid to None
         };
 
         for (i, (name, _)) in record.get_column_iter().enumerate() {
@@ -378,6 +379,7 @@ impl Metadata {
             created_time: None,
             configuration: HashMap::new(),
             format: Default::default(),
+            tableuuid: None, // <-- Added this line to set tableuuid to None
         };
 
         for (i, (name, _)) in record.get_column_iter().enumerate() {
@@ -492,6 +494,7 @@ impl Remove {
             tags: None,
             base_row_id: None,
             default_row_commit_version: None,
+            tableuuid: None, // <-- Added this line to set tableuuid to None
         };
 
         for (i, (name, _)) in record.get_column_iter().enumerate() {
@@ -605,6 +608,7 @@ impl Protocol {
             min_writer_version: -1,
             reader_features: None,
             writer_features: None,
+            tableuuid: None, // <-- Added this line to set tableuuid to None
         };
 
         for (i, (name, _)) in record.get_column_iter().enumerate() {

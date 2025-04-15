@@ -70,6 +70,7 @@ async fn read_simple_table(integration: &IntegrationContext) -> TestResult {
         size: None,
         partition_values: Some(Default::default()),
         tags: Some(Default::default()),
+        tableuuid: None, // added
     }));
 
     Ok(())
@@ -115,6 +116,7 @@ async fn read_simple_table_with_version(integration: &IntegrationContext) -> Tes
         size: None,
         deletion_vector: None,
         extended_file_metadata: None,
+        tableuuid: None, // added
     }));
 
     Ok(())

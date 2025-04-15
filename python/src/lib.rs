@@ -1296,6 +1296,7 @@ impl RawDeltaTable {
                             tags: None,
                             base_row_id: None,
                             default_row_commit_version: None,
+                            tableuuid: None, // added
                         });
                         actions.push(remove_action);
                     }
@@ -2199,6 +2200,7 @@ impl From<&PyAddAction> for Add {
             base_row_id: None,
             default_row_commit_version: None,
             clustering_provider: None,
+            tableuuid: None, // added
         }
     }
 }
@@ -2286,6 +2288,7 @@ impl From<&PyTransaction> for Transaction {
             app_id: value.app_id.clone(),
             version: value.version,
             last_updated: value.last_updated,
+            tableuuid: None, // added
         }
     }
 }
