@@ -11,7 +11,6 @@ use datafusion::functions::expr_fn::random;
 use datafusion::{datasource::MemTable, prelude::DataFrame};
 use datafusion_common::DataFusionError;
 use datafusion_expr::{cast, col, lit};
-use deltalake_core::protocol::SaveMode;
 use deltalake_core::{
     arrow::{
         self,
@@ -19,9 +18,12 @@ use deltalake_core::{
     },
     datafusion::prelude::{CsvReadOptions, SessionContext},
     delta_datafusion::{DeltaScanConfig, DeltaTableProvider},
+    operations::delete::DeleteMetrics,
     operations::merge::{MergeBuilder, MergeMetrics},
+    operations::update::UpdateMetrics,
     DeltaOps, DeltaTable, DeltaTableBuilder, DeltaTableError, ObjectStore, Path,
 };
+use deltalake_core::{operations::transaction::PreCommit, protocol::SaveMode};
 use serde_json::json;
 use tokio::time::Instant;
 
@@ -279,6 +281,262 @@ async fn benchmark_merge_tpcds(
     Ok((duration, metrics))
 }
 
+async fn benchmark_merge_tpcds_nocommit(
+    path: String,
+    parameters: MergePerfParams,
+    merge: fn(DataFrame, DeltaTable) -> Result<MergeBuilder, DeltaTableError>,
+) -> Result<(core::time::Duration, MergeMetrics, PreCommit), DataFusionError> {
+    let table = DeltaTableBuilder::from_uri(path).load().await?;
+    let file_count = table.snapshot()?.files_count();
+
+    let provider = DeltaTableProvider::try_new(
+        table.snapshot()?.clone(),
+        table.log_store(),
+        DeltaScanConfig {
+            file_column_name: Some("file_path".to_string()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let ctx = SessionContext::new();
+    ctx.register_table("t1", Arc::new(provider))?;
+
+    let files = ctx
+        .sql("select file_path as file from t1 group by file")
+        .await?
+        .with_column("r", random())?
+        .filter(col("r").lt_eq(lit(parameters.sample_files)))?;
+
+    let file_sample = files.collect_partitioned().await?;
+    let schema = file_sample.first().unwrap().first().unwrap().schema();
+    let mem_table = Arc::new(MemTable::try_new(schema, file_sample)?);
+    ctx.register_table("file_sample", mem_table)?;
+    let file_sample_count = ctx.table("file_sample").await?.count().await?;
+
+    let row_sample = ctx.table("t1").await?.join(
+        ctx.table("file_sample").await?,
+        datafusion_common::JoinType::Inner,
+        &["file_path"],
+        &["file"],
+        None,
+    )?;
+
+    let matched = row_sample
+        .clone()
+        .filter(random().lt_eq(lit(parameters.sample_matched_rows)))?;
+
+    let rand = cast(random() * lit(u32::MAX), DataType::Int64);
+    let not_matched = row_sample
+        .filter(random().lt_eq(lit(parameters.sample_not_matched_rows)))?
+        .with_column("wr_item_sk", rand.clone())?
+        .with_column("wr_order_number", rand)?;
+
+    let source = matched.union(not_matched)?;
+
+    let start = Instant::now();
+    let (table, metrics, pre_commit) = merge(source, table)?.await?; // TODO: return precommit
+    let end = Instant::now();
+
+    let duration = end.duration_since(start);
+
+    println!("Total File count: {file_count}");
+    println!("File sample count: {file_sample_count}");
+    println!("{metrics:?}");
+    println!("Seconds: {}", duration.as_secs_f32());
+
+    // Clean up and restore to original state.
+    let (table, _) = DeltaOps(table).restore().with_version_to_restore(0).await?;
+    let (table, _) = DeltaOps(table)
+        .vacuum()
+        .with_retention_period(Duration::seconds(0))
+        .with_enforce_retention_duration(false)
+        .await?;
+    table
+        .object_store()
+        .delete(&Path::parse("_delta_log/00000000000000000001.json")?)
+        .await?;
+    table
+        .object_store()
+        .delete(&Path::parse("_delta_log/00000000000000000002.json")?)
+        .await?;
+    table
+        .object_store()
+        .delete(&Path::parse("_delta_log/00000000000000000003.json")?)
+        .await?;
+    let _ = table
+        .object_store()
+        .delete(&Path::parse("_delta_log/00000000000000000004.json")?)
+        .await;
+
+    Ok((duration, metrics))
+}
+
+async fn tgroup_commit(pre_commits: Vec<PreCommit>) -> core::time::Duration {
+    let start = Instant::now();
+    // TODO: Commit tgroup
+    return Instant::now().duration_since(start);
+}
+
+/// Benchmark update operation on TPC-DS data.
+/// It updates a given column by multiplying its value and writes a log to the benchmarks table.
+async fn benchmark_update_tpcds(
+    path: String,
+    column: &str,
+    multiplier: f64,
+) -> Result<(core::time::Duration, UpdateMetrics), DataFusionError> {
+    let table = DeltaTableBuilder::from_uri(path.clone()).load().await?;
+    let start = Instant::now();
+    let (_table, metrics) = DeltaOps(table)
+        .update()
+        .with_predicate("wr_returned_date_sk IS NOT NULL")
+        // .with_updates(vec![(column, &format!("{column} * {multiplier}"))]
+        .with_update(column, format!("{column} * {multiplier}"))
+        .await?;
+    let end = Instant::now();
+
+    let duration = end.duration_since(start);
+
+    let schema = Arc::new(ArrowSchema::new(vec![
+        Field::new("group_id", DataType::Utf8, false),
+        Field::new("name", DataType::Utf8, false),
+        Field::new("sample", DataType::UInt32, false),
+        Field::new("duration_ms", DataType::UInt32, false),
+        Field::new("data", DataType::Utf8, true),
+    ]));
+
+    let batch = RecordBatch::try_new(
+        schema,
+        vec![
+            Arc::new(StringArray::from(vec!["update-log"])),
+            Arc::new(StringArray::from(vec![format!(
+                "update_{}_x{}",
+                column, multiplier
+            )])),
+            Arc::new(UInt32Array::from(vec![0])),
+            Arc::new(UInt32Array::from(vec![duration.as_millis() as u32])),
+            Arc::new(StringArray::from(vec![json!(metrics).to_string()])),
+        ],
+    )?;
+
+    DeltaOps::try_from_uri("data/benchmarks")
+        .await?
+        .write(vec![batch])
+        .with_save_mode(SaveMode::Append)
+        .await?;
+
+    Ok((duration, metrics))
+}
+
+/// Benchmark delete operation on TPC-DS data.
+/// It deletes rows where wr_net_loss exceeds a threshold and writes a log to the benchmarks table.
+async fn benchmark_delete_tpcds(
+    path: String,
+    threshold: f64,
+) -> Result<(core::time::Duration, DeleteMetrics), DataFusionError> {
+    let table = DeltaTableBuilder::from_uri(path.clone()).load().await?;
+    let start = Instant::now();
+    let (_table, metrics) = DeltaOps(table)
+        .delete()
+        .with_predicate(format!("wr_net_loss > {threshold}"))
+        .await?;
+    let end = Instant::now();
+
+    let duration = end.duration_since(start);
+
+    let schema = Arc::new(ArrowSchema::new(vec![
+        Field::new("group_id", DataType::Utf8, false),
+        Field::new("name", DataType::Utf8, false),
+        Field::new("sample", DataType::UInt32, false),
+        Field::new("duration_ms", DataType::UInt32, false),
+        Field::new("data", DataType::Utf8, true),
+    ]));
+
+    let batch = RecordBatch::try_new(
+        schema,
+        vec![
+            Arc::new(StringArray::from(vec!["delete-log"])),
+            Arc::new(StringArray::from(vec![format!(
+                "delete_net_loss_gt_{}",
+                threshold
+            )])),
+            Arc::new(UInt32Array::from(vec![0])),
+            Arc::new(UInt32Array::from(vec![duration.as_millis() as u32])),
+            Arc::new(StringArray::from(vec![json!(metrics).to_string()])),
+        ],
+    )?;
+
+    DeltaOps::try_from_uri("data/benchmarks")
+        .await?
+        .write(vec![batch])
+        .with_save_mode(SaveMode::Append)
+        .await?;
+
+    Ok((duration, metrics))
+}
+
+// Benchmark read-only operations on a Delta table.
+/// It loads the table, runs a simple SELECT query,
+/// measures the duration, counts the rows read, and logs the metrics.
+async fn benchmark_read_tpcds(
+    path: String,
+) -> Result<(core::time::Duration, ReadMetrics), DataFusionError> {
+    // Load the Delta table.
+    let table = DeltaTableBuilder::from_uri(path.clone()).load().await?;
+    let ctx = SessionContext::new();
+    ctx.register_table("t1", Arc::new(table))?;
+
+    // Execute a read-only query.
+    let start = Instant::now();
+    let df = ctx.sql("SELECT * FROM t1").await?;
+    let batches = df.collect().await?;
+    let end = Instant::now();
+    let duration = end.duration_since(start);
+
+    // Compute total number of rows.
+    let row_count: usize = batches.iter().map(|batch| batch.num_rows()).sum();
+    let metrics = ReadMetrics { row_count };
+
+    println!(
+        "Read Benchmark: Rows read: {row_count}, Duration: {} ms",
+        duration.as_millis()
+    );
+
+    // Log the metrics to the benchmarks table.
+    let schema = Arc::new(ArrowSchema::new(vec![
+        Field::new("group_id", DataType::Utf8, false),
+        Field::new("name", DataType::Utf8, false),
+        Field::new("sample", DataType::UInt32, false),
+        Field::new("duration_ms", DataType::UInt32, false),
+        Field::new("data", DataType::Utf8, true),
+    ]));
+
+    let group_id = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis()
+        .to_string();
+
+    let batch = RecordBatch::try_new(
+        schema,
+        vec![
+            Arc::new(StringArray::from(vec![group_id])),
+            Arc::new(StringArray::from(vec!["read-log".to_string()])),
+            Arc::new(UInt32Array::from(vec![0])),
+            Arc::new(UInt32Array::from(vec![duration.as_millis() as u32])),
+            Arc::new(StringArray::from(vec![json!(metrics).to_string()])),
+        ],
+    )?;
+
+    DeltaOps::try_from_uri("data/benchmarks")
+        .await?
+        .write(vec![batch])
+        .with_save_mode(SaveMode::Append)
+        .await?;
+
+    Ok((duration, metrics))
+}
+/// CLI command definitions
 #[derive(Subcommand, Debug)]
 enum Command {
     Convert(Convert),
@@ -286,6 +544,33 @@ enum Command {
     Standard(Standard),
     Compare(Compare),
     Show(Show),
+    UpdatePerf(UpdatePerf),
+    DeletePerf(DeletePerf),
+    ReadPerf(ReadPerf),
+    MultiTable(MultiTable),
+}
+
+#[derive(Debug, Args)]
+struct UpdatePerf {
+    path: String,
+    column: String,
+    multiplier: f64,
+}
+
+#[derive(Debug, Args)]
+struct DeletePerf {
+    path: String,
+    threshold: f64,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct ReadMetrics {
+    row_count: usize,
+}
+
+#[derive(Debug, Args)]
+struct ReadPerf {
+    path: String,
 }
 
 #[derive(Debug, Args)]
@@ -300,6 +585,14 @@ struct Standard {
     samples: Option<u32>,
     output_path: Option<String>,
     group_id: Option<String>,
+}
+
+#[derive(Debug, Args)]
+struct MultiTable {
+    samples: Option<u32>,
+    output_path: Option<String>,
+    group_id: Option<String>,
+    txn_count: i64,
 }
 
 #[derive(Debug, Args)]
@@ -320,6 +613,29 @@ struct BenchArg {
     table_path: String,
     #[command(subcommand)]
     name: MergeBench,
+}
+
+struct MTBench {
+    name: String,
+    op: fn(DataFrame, DeltaTable) -> Result<MergeBuilder, DeltaTableError>,
+    txn_count: i64,
+    params: MergePerfParams,
+}
+
+impl MTBench {
+    fn new<S: ToString>(
+        name: S,
+        op: fn(DataFrame, DeltaTable) -> Result<MergeBuilder, DeltaTableError>,
+        txn_count: i64,
+        params: MergePerfParams,
+    ) -> Self {
+        MTBench {
+            name: name.to_string(),
+            op,
+            txn_count,
+            params,
+        }
+    }
 }
 
 struct Bench {
@@ -387,6 +703,222 @@ async fn main() {
                 .await
                 .unwrap();
         }
+
+        Command::MultiTable(MultiTable {
+            samples,
+            output_path,
+            group_id,
+            txn_count,
+        }) => {
+            let tables: Vec<&str> = vec![];
+            let benches = vec![MTBench::new(
+                "delete_only_fileMatchedFraction_0.05_rowMatchedFraction_0.05",
+                merge_delete,
+                txn_count,
+                MergePerfParams {
+                    sample_files: 0.05,
+                    sample_matched_rows: 0.05,
+                    sample_not_matched_rows: 0.0,
+                },
+            ),
+            MTBench::new(
+                "multiple_insert_only_fileMatchedFraction_0.05_rowNotMatchedFraction_0.05",
+                merge_insert,
+                txn_count,
+                MergePerfParams {
+                    sample_files: 0.05,
+                    sample_matched_rows: 0.00,
+                    sample_not_matched_rows: 0.05,
+                },
+            ),
+            MTBench::new(
+                "multiple_insert_only_fileMatchedFraction_0.05_rowNotMatchedFraction_0.50",
+                merge_insert,
+                txn_count,
+                MergePerfParams {
+                    sample_files: 0.05,
+                    sample_matched_rows: 0.00,
+                    sample_not_matched_rows: 0.50,
+                },
+            ),
+            MTBench::new(
+                "multiple_insert_only_fileMatchedFraction_0.05_rowNotMatchedFraction_1.0",
+                merge_insert,
+                txn_count,
+                MergePerfParams {
+                    sample_files: 0.05,
+                    sample_matched_rows: 0.00,
+                    sample_not_matched_rows: 1.0,
+                },
+            ),
+            MTBench::new(
+                "upsert_fileMatchedFraction_0.05_rowMatchedFraction_0.01_rowNotMatchedFraction_0.1",
+                merge_upsert,
+                txn_count,
+                MergePerfParams {
+                    sample_files: 0.05,
+                    sample_matched_rows: 0.01,
+                    sample_not_matched_rows: 0.1,
+                },
+            ),
+            MTBench::new(
+                "upsert_fileMatchedFraction_0.05_rowMatchedFraction_0.0_rowNotMatchedFraction_0.1",
+                merge_upsert,
+                txn_count,
+                MergePerfParams {
+                    sample_files: 0.05,
+                    sample_matched_rows: 0.00,
+                    sample_not_matched_rows: 0.1,
+                },
+            ),
+            MTBench::new(
+                "upsert_fileMatchedFraction_0.05_rowMatchedFraction_0.1_rowNotMatchedFraction_0.0",
+                merge_upsert,
+                txn_count,
+                MergePerfParams {
+                    sample_files: 0.05,
+                    sample_matched_rows: 0.1,
+                    sample_not_matched_rows: 0.0,
+                },
+            ),
+            MTBench::new(
+                "upsert_fileMatchedFraction_0.05_rowMatchedFraction_0.1_rowNotMatchedFraction_0.01",
+                merge_upsert,
+                txn_count,
+                MergePerfParams {
+                    sample_files: 0.05,
+                    sample_matched_rows: 0.1,
+                    sample_not_matched_rows: 0.01,
+                },
+            ),
+            MTBench::new(
+                "upsert_fileMatchedFraction_0.05_rowMatchedFraction_0.5_rowNotMatchedFraction_0.001",
+                merge_upsert,
+                txn_count,
+                MergePerfParams {
+                    sample_files: 0.05,
+                    sample_matched_rows: 0.5,
+                    sample_not_matched_rows: 0.001,
+                },
+            ),
+            MTBench::new(
+                "upsert_fileMatchedFraction_0.05_rowMatchedFraction_0.99_rowNotMatchedFraction_0.001",
+                merge_upsert,
+                txn_count,
+                MergePerfParams {
+                    sample_files: 0.05,
+                    sample_matched_rows: 0.99,
+                    sample_not_matched_rows: 0.001,
+                },
+            ),
+            MTBench::new(
+                "upsert_fileMatchedFraction_0.05_rowMatchedFraction_1.0_rowNotMatchedFraction_0.001",
+                merge_upsert,
+                txn_count,
+                MergePerfParams {
+                    sample_files: 0.05,
+                    sample_matched_rows: 1.0,
+                    sample_not_matched_rows: 0.001,
+                },
+            ),
+            MTBench::new(
+                "upsert_fileMatchedFraction_0.5_rowMatchedFraction_0.001_rowNotMatchedFraction_0.001",
+                merge_upsert,
+                txn_count,
+                MergePerfParams {
+                    sample_files: 0.5,
+                    sample_matched_rows: 0.001,
+                    sample_not_matched_rows: 0.001,
+                },
+            ),
+            MTBench::new(
+                "upsert_fileMatchedFraction_1.0_rowMatchedFraction_0.001_rowNotMatchedFraction_0.001",
+                merge_upsert,
+                txn_count,
+                MergePerfParams {
+                    sample_files: 1.0,
+                    sample_matched_rows: 0.001,
+                    sample_not_matched_rows: 0.001,
+                },
+            )
+            ];
+
+            let num_samples = samples.unwrap_or(1);
+            let group_id = group_id.unwrap_or(
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis()
+                    .to_string(),
+            );
+            let output = output_path.unwrap_or("data/benchmarks".into());
+
+            let mut group_ids = vec![];
+            let mut name = vec![];
+            let mut samples = vec![];
+            let mut duration_ms = vec![];
+            let mut data = vec![];
+
+            for bench in benches {
+                for sample in 0..num_samples {
+                    let mut pre_commits: Vec<PreCommit> = vec![];
+                    for &table in &tables[0..(bench.txn_count as usize)] {
+                        println!("Test: {} Sample: {sample}", bench.name);
+                        let res: (std::time::Duration, MergeMetrics, PreCommit) =
+                            benchmark_merge_tpcds_nocommit(
+                                String::from(table),
+                                bench.params.clone(),
+                                bench.op,
+                            )
+                            .await
+                            .unwrap();
+
+                        pre_commits.push(res.2);
+
+                        group_ids.push(group_id.clone());
+                        name.push(format!("{}_{}", bench.name.clone(), table));
+                        samples.push(sample);
+                        duration_ms.push(res.0.as_millis() as u32);
+                        data.push(json!(res.1).to_string());
+                    }
+                    let duration = tgroup_commit(pre_commits).await;
+                    group_ids.push(group_id.clone());
+                    name.push(format!("{}_{}", bench.name.clone(), "commit"));
+                    samples.push(sample);
+                    duration_ms.push(duration.as_millis() as u32);
+                    data.push(String::new());
+                }
+            }
+
+            let schema = Arc::new(ArrowSchema::new(vec![
+                Field::new("group_id", DataType::Utf8, false),
+                Field::new("name", DataType::Utf8, false),
+                Field::new("sample", DataType::UInt32, false),
+                Field::new("duration_ms", DataType::UInt32, false),
+                Field::new("data", DataType::Utf8, true),
+            ]));
+
+            let batch = RecordBatch::try_new(
+                schema,
+                vec![
+                    Arc::new(StringArray::from(group_ids)),
+                    Arc::new(StringArray::from(name)),
+                    Arc::new(UInt32Array::from(samples)),
+                    Arc::new(UInt32Array::from(duration_ms)),
+                    Arc::new(StringArray::from(data)),
+                ],
+            )
+            .unwrap();
+
+            DeltaOps::try_from_uri(output)
+                .await
+                .unwrap()
+                .write(vec![batch])
+                .with_save_mode(SaveMode::Append)
+                .await
+                .unwrap();
+        }
+
         Command::Standard(Standard {
             delta_path,
             samples,
@@ -531,7 +1063,7 @@ async fn main() {
             for bench in benches {
                 for sample in 0..num_samples {
                     println!("Test: {} Sample: {sample}", bench.name);
-                    let res =
+                    let res: (std::time::Duration, MergeMetrics) =
                         benchmark_merge_tpcds(delta_path.clone(), bench.params.clone(), bench.op)
                             .await
                             .unwrap();
@@ -649,6 +1181,25 @@ async fn main() {
                 .show()
                 .await
                 .unwrap();
+        }
+
+        Command::UpdatePerf(UpdatePerf {
+            path,
+            column,
+            multiplier,
+        }) => {
+            let (duration, metrics) = benchmark_update_tpcds(path, &column, multiplier)
+                .await
+                .unwrap();
+            println!("Update Metrics: {:?}\nTime: {:.2?}", metrics, duration);
+        }
+        Command::DeletePerf(DeletePerf { path, threshold }) => {
+            let (duration, metrics) = benchmark_delete_tpcds(path, threshold).await.unwrap();
+            println!("Delete Metrics: {:?}\nTime: {:.2?}", metrics, duration);
+        }
+        Command::ReadPerf(ReadPerf { path }) => {
+            let (duration, metrics) = benchmark_read_tpcds(path).await.unwrap();
+            println!("Read Metrics: {:?}\nTime: {:.2?}", metrics, duration);
         }
     }
 }
