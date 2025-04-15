@@ -17,6 +17,7 @@ use deltalake_core::{
         datatypes::{DataType, Field},
     }, datafusion::prelude::{CsvReadOptions, SessionContext}, delta_datafusion::{DeltaScanConfig, DeltaTableProvider}, kernel::Action, operations::{delete::DeleteMetrics, merge::{MergeBuilder, MergeMetrics}, update::UpdateMetrics}, DeltaOps, DeltaTable, DeltaTableBuilder, DeltaTableError, ObjectStore, Path
 };
+// use deltalake_core::table;
 use deltalake_core::{operations::transaction::PreCommit, protocol::SaveMode};
 use serde_json::json;
 use tokio::time::Instant;
@@ -608,8 +609,8 @@ struct Standard {
 struct MultiTable {
     samples: Option<u32>,
     output_path: Option<String>,
-    group_id: Option<String>,
     txn_count: i64,
+    group_id: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -724,10 +725,18 @@ async fn main() {
         Command::MultiTable(MultiTable {
             samples,
             output_path,
-            group_id,
             txn_count,
+            group_id,
         }) => {
-            let tables: Vec<&str> = vec![];
+            let tables: Vec<&str> = vec!["/home/divyams/Code_Delta/tpcds-delta/web_returns", "/home/divyams/Code_Delta/tpcds-delta/web_returns_2"];
+            // Comment after once - To Do
+            // for table_path in &tables{ 
+            //     let mut table = DeltaTableBuilder::from_uri(table_path).load().await.unwrap();
+            //     // deltalake::open_table(table_path).await?;
+            //     // let table = DeltaTableBuilder::from_uri(table_path.to_string()).load();
+            //     table.add_to_tgroup("/home/divyams/Code_Delta/tpcds-delta/web_returns_tgroup").await.unwrap();
+                
+            // };
             let benches = vec![MTBench::new(
                 "delete_only_fileMatchedFraction_0.05_rowMatchedFraction_0.05",
                 merge_delete,
