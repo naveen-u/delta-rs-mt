@@ -10,39 +10,39 @@ use deltalake::kernel::Action;
 use deltalake_core::operations::transaction::PreCommit;
 use deltalake_core::errors::DeltaResult;
 
-fn update_action_with_tableuuid(action: &Action, table_uuid: &str) -> Action {
+fn update_action_with_table_id(action: &Action, table_uuid: &str) -> Action {
     match action {
         Action::Metadata(meta) => {
             let mut new_meta = meta.clone();
-            new_meta.tableuuid = Some(table_uuid.to_owned());
+            new_meta.table_id = Some(table_uuid.to_owned());
             Action::Metadata(new_meta)
         }
         Action::Txn(txn) => {
             let mut new_txn = txn.clone();
-            new_txn.tableuuid = Some(table_uuid.to_owned());
+            new_txn.table_id = Some(table_uuid.to_owned());
             Action::Txn(new_txn)
         }
         Action::CommitInfo(ci) => {
             let mut new_ci = ci.clone();
-            new_ci.tableuuid = Some(table_uuid.to_owned());
+            new_ci.table_id = Some(table_uuid.to_owned());
             Action::CommitInfo(new_ci)
         }
         Action::Remove(rem) => {
             let mut new_rem = rem.clone();
-            new_rem.tableuuid = Some(table_uuid.to_owned());
+            new_rem.table_id = Some(table_uuid.to_owned());
             Action::Remove(new_rem)
         }
         Action::Add(add) => {
             let mut new_add = add.clone();
-            new_add.tableuuid = Some(table_uuid.to_owned());
+            new_add.table_id = Some(table_uuid.to_owned());
             Action::Add(new_add)
         }
         Action::Protocol(proto) => {
             let mut new_proto = proto.clone();
-            new_proto.tableuuid = Some(table_uuid.to_owned());
+            new_proto.table_id = Some(table_uuid.to_owned());
             Action::Protocol(new_proto)
         }
-        // For all other Action variants that do not have a tableuuid field,
+        // For all other Action variants that do not have a table_id field,
         // simply clone the action.
         _ => action.clone(),
     }
@@ -50,7 +50,7 @@ fn update_action_with_tableuuid(action: &Action, table_uuid: &str) -> Action {
 
 
 
-fn combine_precommits_with_tableuuid<'a>(
+fn combine_precommits_with_table_id<'a>(
     precommits: Vec<PreCommit<'a>>,
     tables: Vec<String>,
 ) -> DeltaResult<PreCommit<'a>> {
@@ -60,7 +60,7 @@ fn combine_precommits_with_tableuuid<'a>(
     for (precommit, table_uuid) in precommits.iter().zip(tables.iter()){
 
         for action in precommit.data().actions.iter() {
-            combined_actions.push(update_action_with_tableuuid(action, &table_uuid));
+            combined_actions.push(update_action_with_table_id(action, &table_uuid));
         }
     }
 
@@ -136,7 +136,7 @@ async fn main() -> Result<(), deltalake::errors::DeltaTableError> {
         .get_precommit().await?;
     
 
-    let combined_precommit = combine_precommits_with_tableuuid(
+    let combined_precommit = combine_precommits_with_table_id(
             vec![precommit1, precommit2, precommit3],
             vec![uuid1,uuid2,uuid3],
         )?;

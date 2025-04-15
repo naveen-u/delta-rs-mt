@@ -232,7 +232,7 @@ pub(crate) async fn prepare_predicate_actions(
             tags: None,
             base_row_id: action.base_row_id,
             default_row_commit_version: action.default_row_commit_version,
-            tableuuid: None, // <-- Added this line to set tableuuid to None
+            table_id: None, // <-- Added this line to set table_id to None
         }))
     }
     Ok((actions, cdf_df))

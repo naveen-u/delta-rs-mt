@@ -225,7 +225,7 @@ async fn execute(
                 deletion_vector: a.deletion_vector,
                 base_row_id: a.base_row_id,
                 default_row_commit_version: a.default_row_commit_version,
-                tableuuid: None, // <-- Added this line to set tableuuid to None
+                table_id: None, // <-- Added this line to set table_id to None
             }
         })
         .collect();
@@ -254,7 +254,7 @@ async fn execute(
             } else {
                 table.protocol()?.reader_features.clone()
             },
-            tableuuid: None, // <-- Added this line to set tableuuid to None
+            table_id: None, // <-- Added this line to set table_id to None
         }
     } else {
         Protocol {
@@ -268,7 +268,7 @@ async fn execute(
             ),
             writer_features: snapshot.protocol().writer_features.clone(),
             reader_features: snapshot.protocol().reader_features.clone(),
-            tableuuid: None, // <-- Added this line to set tableuuid to None
+            table_id: None, // <-- Added this line to set table_id to None
         }
     };
     commit_properties

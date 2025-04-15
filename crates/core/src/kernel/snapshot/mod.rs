@@ -1053,7 +1053,7 @@ mod tests {
                     deletion_vector: add.deletion_vector.clone(),
                     base_row_id: add.base_row_id,
                     default_row_commit_version: add.default_row_commit_version,
-                    tableuuid: None, // added
+                    table_id: None, // added
                 }
                 .into()
             })

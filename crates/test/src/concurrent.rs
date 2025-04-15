@@ -136,7 +136,7 @@ impl Worker {
             base_row_id: None,
             default_row_commit_version: None,
             clustering_provider: None,
-            tableuuid: None, // added
+            table_id: None, // added
         })];
         let snapshot = self.table.snapshot().unwrap().snapshot();
 

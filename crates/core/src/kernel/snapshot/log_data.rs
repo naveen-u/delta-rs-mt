@@ -315,7 +315,7 @@ impl LogicalFile<'_> {
             default_row_commit_version: None,
             clustering_provider: None,
             stats_parsed: None,
-            tableuuid: None, // <-- Added this line to set tableuuid to None
+            table_id: None, // <-- Added this line to set table_id to None
         }
     }
 
@@ -346,7 +346,7 @@ impl LogicalFile<'_> {
             tags: None,
             base_row_id: None,
             default_row_commit_version: None,
-            tableuuid: None, // <-- Added this line to set tableuuid to None
+            table_id: None, // <-- Added this line to set table_id to None
         }
     }
 }

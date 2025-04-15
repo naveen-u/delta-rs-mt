@@ -772,27 +772,27 @@ impl ExtensionPlanner for MergeMetricExtensionPlanner {
 }
 
 
-fn update_action_with_tableuuid(action: &mut Action, table_uuid: String) {
+fn update_action_with_table_id(action: &mut Action, table_uuid: String) {
     match action {
         Action::Metadata(meta) => {
-            meta.tableuuid = Some(table_uuid)
+            meta.table_id = Some(table_uuid)
         }
         Action::Txn(txn) => {
-            txn.tableuuid = Some(table_uuid)
+            txn.table_id = Some(table_uuid)
         }
         Action::CommitInfo(ci) => {
-            ci.tableuuid = Some(table_uuid)
+            ci.table_id = Some(table_uuid)
         }
         Action::Remove(rem) => {
-            rem.tableuuid = Some(table_uuid)
+            rem.table_id = Some(table_uuid)
         }
         Action::Add(add) => {
-            add.tableuuid = Some(table_uuid)
+            add.table_id = Some(table_uuid)
         }
         Action::Protocol(proto) => {
-            proto.tableuuid = Some(table_uuid)
+            proto.table_id = Some(table_uuid)
         }
-        // For all other Action variants that do not have a tableuuid field,
+        // For all other Action variants that do not have a table_id field,
         // simply clone the action.
         _ => {},
     }
@@ -1524,7 +1524,7 @@ async fn execute_precommit<'a>(
 
     
     for mut action in precommit.data_mut().actions.iter_mut() {
-        update_action_with_tableuuid(&mut action, String::from(&snapshot.metadata().id));
+        update_action_with_table_id(&mut action, String::from(&snapshot.metadata().id));
     }
 
 

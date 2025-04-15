@@ -202,7 +202,7 @@ impl FileSystemCheckPlan {
                 tags: file.tags,
                 base_row_id: file.base_row_id,
                 default_row_commit_version: file.default_row_commit_version,
-                tableuuid: None, // <-- Added this line to set tableuuid to None
+                table_id: None, // <-- Added this line to set table_id to None
             }));
         }
         let metrics = FileSystemCheckMetrics {

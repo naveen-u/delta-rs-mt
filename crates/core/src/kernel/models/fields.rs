@@ -56,8 +56,8 @@ static METADATA_FIELD: LazyLock<StructField> = LazyLock::new(|| {
                 MapType::new(DataType::STRING, DataType::STRING, true),
                 false,
             ),
-            // NEW: Add the optional tableuuid field.
-            StructField::new("tableuuid", DataType::STRING, true),
+            // NEW: Add the optional table_id field.
+            StructField::new("table_id", DataType::STRING, true),
         ]),
         true,
     )
@@ -105,7 +105,7 @@ static COMMIT_INFO_FIELD: LazyLock<StructField> = LazyLock::new(|| {
                 true,
             ),
             // NEW
-            StructField::new("tableuuid", DataType::STRING, true),
+            StructField::new("table_id", DataType::STRING, true),
 
             
         ]),
@@ -128,8 +128,8 @@ static ADD_FIELD: LazyLock<StructField> = LazyLock::new(|| {
             StructField::new("baseRowId", DataType::LONG, true),
             StructField::new("defaultRowCommitVersion", DataType::LONG, true),
             StructField::new("clusteringProvider", DataType::STRING, true),
-            // NEW: tableuuid field for Add.
-            StructField::new("tableuuid", DataType::STRING, true),
+            // NEW: table_id field for Add.
+            StructField::new("table_id", DataType::STRING, true),
         ]),
         true,
     )
@@ -150,8 +150,8 @@ static REMOVE_FIELD: LazyLock<StructField> = LazyLock::new(|| {
             deletion_vector_field(),
             StructField::new("baseRowId", DataType::LONG, true),
             StructField::new("defaultRowCommitVersion", DataType::LONG, true),
-            // NEW: tableuuid field for Remove.
-            StructField::new("tableuuid", DataType::STRING, true),
+            // NEW: table_id field for Remove.
+            StructField::new("table_id", DataType::STRING, true),
         ]),
         true,
     )
@@ -191,8 +191,8 @@ static TXN_FIELD: LazyLock<StructField> = LazyLock::new(|| {
             StructField::new("appId", DataType::STRING, false),
             StructField::new("version", DataType::LONG, false),
             StructField::new("lastUpdated", DataType::LONG, true),
-            // NEW: tableuuid field for Transaction.
-            StructField::new("tableuuid", DataType::STRING, true),
+            // NEW: table_id field for Transaction.
+            StructField::new("table_id", DataType::STRING, true),
         ]),
         true,
     )

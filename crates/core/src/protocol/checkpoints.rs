@@ -397,7 +397,7 @@ fn parquet_bytes_from_state(
         } else {
             None
         },
-        tableuuid: None, // <-- Added this line to set tableuuid to None
+        table_id: None, // <-- Added this line to set table_id to None
     }))
     // metaData
     .chain(std::iter::once(Action::Metadata(current_metadata.clone())))

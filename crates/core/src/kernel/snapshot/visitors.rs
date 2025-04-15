@@ -85,7 +85,7 @@ impl ReplayVisitor for AppTransactionVisitor {
                         app_id: app_id.into(),
                         version: ex::read_primitive(version, idx)?,
                         last_updated: last_updated.and_then(|arr| ex::read_primitive_opt(arr, idx)),
-                        tableuuid: None, // <-- Added this line to set tableuuid to None
+                        table_id: None, // <-- Added this line to set table_id to None
                     },
                 );
             }
