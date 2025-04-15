@@ -1,4 +1,4 @@
-{"tGroup":{"tgroupUri":"/home/gnilay/si330v2/delta/delta-rs-mt/crates/test/tests/data/_tgroup_delta_log","timestamp":1615751716705,"redirectState":"ReadOnly"}}
+{"tGroup":{"tgroupUri":"/home/gnilay/si330v2/delta/delta-rs-mt/crates/test/tests/data/t_group_1","timestamp":1615751716705,"redirectState":"ReadOnly"}}
 {"commitInfo":{"timestamp":1615751716705,"operation":"WRITE","operationParameters":{"mode":"Append","partitionBy":"[]"},"readVersion":9,"isBlindAppend":true,"operationMetrics":{"numFiles":"1","numOutputBytes":"442","numOutputRows":"1"}}}
 {"commitInfo":{"timestamp":1615751699523,"operation":"WRITE","operationParameters":{"mode":"Append","partitionBy":"[]"},"isBlindAppend":true,"operationMetrics":{"numFiles":"1","numOutputBytes":"442","numOutputRows":"1"}}}
 {"protocol":{"minReaderVersion":1,"minWriterVersion":2}}

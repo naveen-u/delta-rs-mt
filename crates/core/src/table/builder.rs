@@ -124,6 +124,8 @@ pub struct DeltaTableBuilder {
     #[allow(unused_variables)]
     allow_http: Option<bool>,
     table_config: DeltaTableConfig,
+    pub has_tgroup: bool,
+    pub metadata_id: Option<String>,
 }
 
 impl DeltaTableBuilder {
@@ -171,6 +173,8 @@ impl DeltaTableBuilder {
             storage_options: None,
             allow_http: None,
             table_config: DeltaTableConfig::default(),
+            has_tgroup: false,
+            metadata_id: None,
         })
     }
 
@@ -328,14 +332,12 @@ impl DeltaTableBuilder {
         println!("{}", self.table_uri);
         let mut builder = self.clone();
         builder.table_uri_orig = Some(builder.table_uri.clone());
-
+    
         let mut table = builder.build()?;
-
         let log_store = table.log_store();
-
         let log_path = &Path::default().child("_delta_log");
-
-        // Step 2: List log files using log_segment's function
+    
+        // Step 2: List log files using log_segment's function.
         let (commit_files, _checkpoint_files, _tgroup_uri) =
             crate::kernel::snapshot::log_segment::list_log_files(
                 log_store.object_store(None).as_ref(),
@@ -344,36 +346,61 @@ impl DeltaTableBuilder {
                 None,
             )
             .await?;
-
-        // Step 3: Read the last JSON commit file
-        if let Some(last_commit) = commit_files.first() {
+    
+        // Extract tgroup URI from the newest (first) commit file
+        if let Some(newest_commit) = commit_files.first() {
             let bytes = log_store
                 .object_store(None)
-                .get(&last_commit.location)
+                .get(&newest_commit.location)
                 .await?
                 .bytes()
                 .await?;
-
-            for (i, line) in bytes.split(|b| *b == b'\n').enumerate() {
+            for line in bytes.split(|b| *b == b'\n') {
                 if let Ok(json_value) = serde_json::from_slice::<serde_json::Value>(line) {
                     if let Some(tgroup_obj) = json_value.get("tGroup") {
                         if let Some(uri) = tgroup_obj.get("tgroupUri").and_then(|v| v.as_str()) {
                             let uri_str = format!("file://{}/", uri.trim_end_matches('/'));
-
                             let tgroup_url = ensure_table_uri(&uri_str)?;
-
-                            let tgroup_logstore: Arc<dyn LogStore> =
-                                logstore_for(tgroup_url.clone(), StorageOptions::default(), None)?;
-
-                            table.log_store = tgroup_logstore.clone();
-                            break;
+                            let tgroup_logstore: Arc<dyn LogStore> = logstore_for(
+                                tgroup_url.clone(),
+                                StorageOptions::default(),
+                                None,
+                            )?;
+                            table.log_store = tgroup_logstore;
+                            table.has_tgroup = true;
+                            break; 
                         }
                     }
                 }
             }
         }
-
-        // println!("{}", self.table_uri.as_ref());
+    
+        // Extract metadata id from the oldest (last) commit file
+        let mut metadata_id: Option<String> = None;
+        if let Some(oldest_commit) = commit_files.last() {
+            let bytes = log_store
+                .object_store(None)
+                .get(&oldest_commit.location)
+                .await?
+                .bytes()
+                .await?;
+            for line in bytes.split(|b| *b == b'\n') {
+                if let Ok(json_value) = serde_json::from_slice::<serde_json::Value>(line) {
+                    if let Some(meta_obj) = json_value.get("metaData") {
+                        if let Some(id) = meta_obj.get("id").and_then(|v| v.as_str()) {
+                            metadata_id = Some(id.to_string());
+                            break; 
+                        }
+                    }
+                }
+            }
+        }
+    
+        if let Some(ref id) = metadata_id {
+            println!("Extracted metadata id: {}", id);
+            table.metadata_id = Some(id.to_string());
+        }
+    
         match version {
             DeltaVersion::Newest => table.load().await?,
             DeltaVersion::Version(v) => table.load_version(v).await?,
@@ -381,6 +408,7 @@ impl DeltaTableBuilder {
         }
         Ok(table)
     }
+    
 }
 
 enum UriType {

@@ -45,6 +45,27 @@ impl DeltaTableState {
         Ok(Self { snapshot })
     }
 
+    pub async fn try_new_tgroup(
+        table_root: &Path,
+        store: Arc<dyn ObjectStore>,
+        config: DeltaTableConfig,
+        version: Option<i64>,
+        has_tgroup: bool,
+        metadata_id: Option<String>,
+    ) -> DeltaResult<Self> {
+        let snapshot = EagerSnapshot::try_new_with_visitor_with_tgroup(
+            table_root,
+            store.clone(),
+            config,
+            version,
+            HashSet::from([ActionType::Txn]),
+            has_tgroup,
+            metadata_id,
+        )
+        .await?;
+        Ok(Self { snapshot })
+    }
+
     /// Return table version
     pub fn version(&self) -> i64 {
         self.snapshot.version()
