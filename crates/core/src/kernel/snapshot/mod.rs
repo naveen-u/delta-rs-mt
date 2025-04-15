@@ -93,6 +93,36 @@ impl Snapshot {
         })
     }
 
+    pub async fn try_new_with_tgroup(
+        table_root: &Path,
+        store: Arc<dyn ObjectStore>,
+        config: DeltaTableConfig,
+        version: Option<i64>,
+        has_tgroup: bool,
+        metadata_id: Option<String>,
+    ) -> DeltaResult<Self> {
+        let log_segment = LogSegment::try_new_with_tgroup(table_root, version, store.as_ref(), has_tgroup, metadata_id).await?;
+        let (protocol, metadata) = log_segment.read_metadata(store.clone(), &config).await?;
+        if !has_tgroup{
+            if metadata.is_none() || protocol.is_none() {
+                return Err(DeltaTableError::Generic(
+                    "Cannot read metadata from log segment".into(),
+                ));
+            };
+        }
+        
+        let (metadata, protocol) = (metadata.unwrap(), protocol.unwrap());
+        let schema = serde_json::from_str(&metadata.schema_string)?;
+        Ok(Self {
+            log_segment,
+            config,
+            protocol,
+            metadata,
+            schema,
+            table_url: table_root.to_string(),
+        })
+    }
+
     #[cfg(test)]
     pub fn new_test<'a>(
         commits: impl IntoIterator<Item = &'a CommitData>,
@@ -365,6 +395,39 @@ impl EagerSnapshot {
             .collect::<Vec<_>>();
         let snapshot =
             Snapshot::try_new(table_root, store.clone(), config.clone(), version).await?;
+
+        let files = match config.require_files {
+            true => snapshot.files(store, &mut visitors)?.try_collect().await?,
+            false => vec![],
+        };
+
+        let mut sn = Self {
+            snapshot,
+            files,
+            tracked_actions,
+            transactions: None,
+        };
+
+        sn.process_visitors(visitors)?;
+
+        Ok(sn)
+    }
+
+    pub async fn try_new_with_visitor_with_tgroup(
+        table_root: &Path,
+        store: Arc<dyn ObjectStore>,
+        config: DeltaTableConfig,
+        version: Option<i64>,
+        tracked_actions: HashSet<ActionType>,
+        has_tgroup: bool,
+        metadata_id: Option<String>,
+    ) -> DeltaResult<Self> {
+        let mut visitors = tracked_actions
+            .iter()
+            .flat_map(get_visitor)
+            .collect::<Vec<_>>();
+        let snapshot =
+            Snapshot::try_new_with_tgroup(table_root, store.clone(), config.clone(), version, has_tgroup, metadata_id).await?;
 
         let files = match config.require_files {
             true => snapshot.files(store, &mut visitors)?.try_collect().await?,

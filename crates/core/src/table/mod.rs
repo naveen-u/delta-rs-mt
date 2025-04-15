@@ -262,6 +262,8 @@ pub struct DeltaTable {
     pub tgroup_log_segment: Option<LogSegment>,
     /// tgroup log store
     pub(crate) tgroup_log_store: Option<LogStoreRef>,
+    pub has_tgroup: bool,
+    pub metadata_id: Option<String>,
 }
 
 impl Serialize for DeltaTable {
@@ -317,6 +319,8 @@ impl<'de> Deserialize<'de> for DeltaTable {
                     log_store,
                     tgroup_log_segment: None,
                     tgroup_log_store: None,
+                    has_tgroup: false,
+                    metadata_id: None,
                 };
                 Ok(table)
             }
@@ -338,6 +342,8 @@ impl DeltaTable {
             config,
             tgroup_log_segment: None,
             tgroup_log_store: None,
+            has_tgroup: false,
+            metadata_id: None,
         }
     }
 
@@ -353,6 +359,8 @@ impl DeltaTable {
             config: Default::default(),
             tgroup_log_segment: None,
             tgroup_log_store: None,
+            has_tgroup: false,
+            metadata_id: None,
         }
     }
 
@@ -444,18 +452,38 @@ impl DeltaTable {
         &mut self,
         max_version: Option<i64>,
     ) -> Result<(), DeltaTableError> {
-        match self.state.as_mut() {
-            Some(state) => state.update(self.log_store.clone(), max_version).await,
-            _ => {
-                let state = DeltaTableState::try_new(
-                    &Path::default(),
-                    self.log_store.object_store(None),
-                    self.config.clone(),
-                    max_version,
-                )
-                .await?;
-                self.state = Some(state);
-                Ok(())
+        if self.has_tgroup{
+            match self.state.as_mut() {
+                Some(state) => state.update(self.log_store.clone(), max_version).await,
+                _ => {
+                    let state = DeltaTableState::try_new_tgroup(
+                        &Path::default(),
+                        self.log_store.object_store(None),
+                        self.config.clone(),
+                        max_version,
+                        self.has_tgroup,
+                        self.metadata_id.clone(),
+                    )
+                    .await?;
+                    self.state = Some(state);
+                    Ok(())
+                }
+            }
+        }
+        else{
+            match self.state.as_mut() {
+                Some(state) => state.update(self.log_store.clone(), max_version).await,
+                _ => {
+                    let state = DeltaTableState::try_new(
+                        &Path::default(),
+                        self.log_store.object_store(None),
+                        self.config.clone(),
+                        max_version,
+                    )
+                    .await?;
+                    self.state = Some(state);
+                    Ok(())
+                }
             }
         }
     }

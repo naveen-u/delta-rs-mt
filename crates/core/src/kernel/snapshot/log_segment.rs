@@ -106,7 +106,7 @@ impl LogSegment {
         let maybe_cp = read_last_checkpoint(store, &log_url).await?;
 
         // List relevant files from log
-        let (mut commit_files, checkpoint_files, tgroup_uri) = match (maybe_cp, version) {
+        let (mut commit_files, checkpoint_files, _) = match (maybe_cp, version) {
             (Some(cp), None) => list_log_files_with_checkpoint(&cp, store, &log_url).await?,
             (Some(cp), Some(v)) if cp.version <= v => {
                 list_log_files_with_checkpoint(&cp, store, &log_url).await?
@@ -114,16 +114,6 @@ impl LogSegment {
             _ => list_log_files(store, &log_url, version, None).await?,
         };
 
-        // println!("tgroup_uri: {:?}", tgroup_uri);
-
-        // if false {
-        //     // Call tgrouup function to handle tgroup
-        //     let tgroup_path = Path::from(uri.as_str());
-        //     let dummy_store = Arc::new(InMemory::new()) as Arc<dyn ObjectStore>;
-        //     return LogSegment::try_new_tgroup(uri, version, dummy_store.as_ref()).await;
-        // } else {
-        // Continue with current logic (no-op or fallthrough)
-        // remove all files above requested version
         if let Some(version) = version {
             commit_files.retain(|meta| meta.location.commit_version() <= Some(version));
         }
@@ -154,56 +144,27 @@ impl LogSegment {
         // }
     }
 
-    pub async fn try_new_tgroup(
-        tgroup_uri: &str, // full path for tgroup logs /home/gnilay/si330v2/delta/delta-rs-mt/crates/test/tests/data/_tgroup_delta_log
+    pub async fn try_new_with_tgroup(
+        table_root: &Path, // root directory of the Delta table (e.g. s3://bucket/path/to/table)
         version: Option<i64>, // optional — if provided, load that exact version
         store: &dyn ObjectStore, // backend file system abstraction (S3, local, etc.)
+        has_tgroup: bool,
+        metadata_id: Option<String>,
     ) -> DeltaResult<Self> {
 
-        // let uri_str = format!("file://{}", table_root.to_string());
-        // let tgroup_url = Url::parse(&uri_str)
-        // .map_err(|e| DeltaTableError::Generic(format!("Invalid tgroup_uri: {e}")))?;
-        let uri_str = format!("file://{}/", tgroup_uri.trim_end_matches('/'));
+        let log_url = table_root.child("_delta_log"); // s3://bucket/path/to/table/_delta_log/
         
-
-        println!("tgroup_uri1: {}", uri_str);
-        let tgroup_url = ensure_table_uri(&uri_str)?; // uses the builder.rs util for consistency
-
-        // Get a new object store for the tgroup path
-        let tgroup_logstore = logstore_for(
-            tgroup_url.clone(),
-            StorageOptions::default(), // you can pass in options if needed
-            None,
-        )?;
-
-        let store = tgroup_logstore.object_store(None);
-
-        let uri_str = "memory:///_delta_log";
-        let tgroup_url = ensure_table_uri(uri_str)?;
-        
-        let table_path = object_store::path::Path::from(tgroup_url.path());
-
-
-        let log_url = &table_path;//.child(""); // s3://bucket/path/to/table/_delta_log/
-        // println!("tgroup_uri2: {:?}", tgroup_uri);
-
-        // let uri_str = format!("file://{}/_delta_log", tgroup_uri.trim_end_matches('/'));
-        // let log_root_url = ensure_table_uri(&uri_str)?; 
-        
-
-
-        let maybe_cp = read_last_checkpoint(store.as_ref(), &log_url).await?;
+        let maybe_cp = read_last_checkpoint_with_tgroup(store, &log_url, metadata_id).await?;
 
         // List relevant files from log
-        let (mut commit_files, checkpoint_files, tgroup_url) = match (maybe_cp, version) {
-            (Some(cp), None) => list_log_files_with_checkpoint(&cp, store.as_ref(), &log_url).await?,
+        let (mut commit_files, checkpoint_files, _) = match (maybe_cp, version) {
+            (Some(cp), None) => list_log_files_with_checkpoint(&cp, store, &log_url).await?,
             (Some(cp), Some(v)) if cp.version <= v => {
-                list_log_files_with_checkpoint(&cp, store.as_ref(), &log_url).await?
+                list_log_files_with_checkpoint(&cp, store, &log_url).await?
             }
-            _ => list_log_files(store.as_ref(), &log_url, version, None).await?,
+            _ => list_log_files(store, &log_url, version, None).await?,
         };
-
-        // remove all files above requested version
+        
         if let Some(version) = version {
             commit_files.retain(|meta| meta.location.commit_version() <= Some(version));
         }
@@ -231,7 +192,87 @@ impl LogSegment {
         }
 
         Ok(segment)
+        // }
     }
+
+    // pub async fn try_new_tgroup(
+    //     tgroup_uri: &str, // full path for tgroup logs /home/gnilay/si330v2/delta/delta-rs-mt/crates/test/tests/data/_tgroup_delta_log
+    //     version: Option<i64>, // optional — if provided, load that exact version
+    //     store: &dyn ObjectStore, // backend file system abstraction (S3, local, etc.)
+    // ) -> DeltaResult<Self> {
+
+    //     // let uri_str = format!("file://{}", table_root.to_string());
+    //     // let tgroup_url = Url::parse(&uri_str)
+    //     // .map_err(|e| DeltaTableError::Generic(format!("Invalid tgroup_uri: {e}")))?;
+    //     let uri_str = format!("file://{}/", tgroup_uri.trim_end_matches('/'));
+        
+
+    //     println!("tgroup_uri1: {}", uri_str);
+    //     let tgroup_url = ensure_table_uri(&uri_str)?; // uses the builder.rs util for consistency
+
+    //     // Get a new object store for the tgroup path
+    //     let tgroup_logstore = logstore_for(
+    //         tgroup_url.clone(),
+    //         StorageOptions::default(), // you can pass in options if needed
+    //         None,
+    //     )?;
+
+    //     let store = tgroup_logstore.object_store(None);
+
+    //     let uri_str = "memory:///_delta_log";
+    //     let tgroup_url = ensure_table_uri(uri_str)?;
+        
+    //     let table_path = object_store::path::Path::from(tgroup_url.path());
+
+
+    //     let log_url = &table_path;//.child(""); // s3://bucket/path/to/table/_delta_log/
+    //     // println!("tgroup_uri2: {:?}", tgroup_uri);
+
+    //     // let uri_str = format!("file://{}/_delta_log", tgroup_uri.trim_end_matches('/'));
+    //     // let log_root_url = ensure_table_uri(&uri_str)?; 
+        
+
+
+    //     let maybe_cp = read_last_checkpoint(store.as_ref(), &log_url).await?;
+
+    //     // List relevant files from log
+    //     let (mut commit_files, checkpoint_files, tgroup_url) = match (maybe_cp, version) {
+    //         (Some(cp), None) => list_log_files_with_checkpoint(&cp, store.as_ref(), &log_url).await?,
+    //         (Some(cp), Some(v)) if cp.version <= v => {
+    //             list_log_files_with_checkpoint(&cp, store.as_ref(), &log_url).await?
+    //         }
+    //         _ => list_log_files(store.as_ref(), &log_url, version, None).await?,
+    //     };
+
+    //     // remove all files above requested version
+    //     if let Some(version) = version {
+    //         commit_files.retain(|meta| meta.location.commit_version() <= Some(version));
+    //     }
+
+    //     let mut segment = Self {
+    //         version: 0,
+    //         commit_files: commit_files.into(),
+    //         checkpoint_files,
+    //     };
+    //     if segment.commit_files.is_empty() && segment.checkpoint_files.is_empty() {
+    //         return Err(DeltaTableError::NotATable("no log files".into()));
+    //     }
+    //     // get the effective version from chosen files
+    //     let version_eff = segment.file_version().ok_or(DeltaTableError::Generic(
+    //         "failed to get effective version".into(),
+    //     ))?; // TODO: A more descriptive error
+    //     segment.version = version_eff;
+    //     segment.validate()?;
+
+    //     if let Some(v) = version {
+    //         if version_eff != v {
+    //             // TODO more descriptive error
+    //             return Err(DeltaTableError::Generic("missing version".into()));
+    //         }
+    //     }
+
+    //     Ok(segment)
+    // }
     /// Try to create a new [`LogSegment`] from a slice of the log.
     ///
     /// This will create a new [`LogSegment`] from the log with all relevant log files
@@ -563,6 +604,31 @@ async fn read_last_checkpoint(
     // "_delta_log/_last_checkpoint" for normal logs
     // "home/gnilay/si330v2/delta/delta-rs-mt/crates/test/tests/data/_tgroup_delta_log/_delta_log/_last_checkpoint" for tgroup logs
     let file_path = log_root.child(LAST_CHECKPOINT_FILE_NAME);
+    match fs_client.get(&file_path).await {
+        Ok(data) => {
+            let data = data.bytes().await?;
+            Ok(Some(serde_json::from_slice(&data)?))
+        }
+        Err(ObjectStoreError::NotFound { .. }) => Ok(None),
+        Err(err) => Err(err.into()),
+    }
+}
+
+async fn read_last_checkpoint_with_tgroup(
+    fs_client: &dyn ObjectStore,
+    log_root: &Path,
+    metadata_id: Option<String>,
+) -> DeltaResult<Option<CheckpointMetadata>> {
+    // log_root is "_delta_log" for normal logs
+    // "home/gnilay/si330v2/delta/delta-rs-mt/crates/test/tests/data/_tgroup_delta_log/_delta_log" for tgroup logs
+    // "_delta_log/_last_checkpoint" for normal logs
+    // "home/gnilay/si330v2/delta/delta-rs-mt/crates/test/tests/data/_tgroup_delta_log/_delta_log/_last_checkpoint" for tgroup logs
+    let new_str = if let Some(ref id) = metadata_id {
+        format!("{}.{}", LAST_CHECKPOINT_FILE_NAME, id)
+    } else {
+        LAST_CHECKPOINT_FILE_NAME.to_string()
+    };
+    let file_path = log_root.child(new_str);
     match fs_client.get(&file_path).await {
         Ok(data) => {
             let data = data.bytes().await?;
