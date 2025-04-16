@@ -3,6 +3,7 @@ use std::collections::VecDeque;
 use std::sync::{Arc, LazyLock};
 
 use arrow::compute::filter_record_batch;
+use arrow::compute::kernels::comparison::regexp_is_match_scalar;
 use arrow_array::{RecordBatch, StringArray, StructArray};
 use chrono::Utc;
 use futures::{stream::BoxStream, StreamExt, TryStreamExt};
@@ -15,7 +16,6 @@ use parquet::arrow::ProjectionMask;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use tracing::debug;
-use arrow::compute::kernels::comparison::regexp_is_match_scalar;
 
 use object_store::memory::InMemory;
 
@@ -26,13 +26,15 @@ use crate::logstore::LogStore;
 use crate::operations::transaction::CommitData;
 use crate::{DeltaResult, DeltaTableConfig, DeltaTableError};
 
-use url::Url;
-use crate::table::builder::ensure_table_uri;
 use crate::logstore::logstore_for;
 use crate::storage::StorageOptions;
+use crate::table::builder::ensure_table_uri;
+use url::Url;
 
 const LAST_CHECKPOINT_FILE_NAME: &str = "_last_checkpoint";
 
+static TGROUP_CHECKPOINT_FILE_PATTERN: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\d+\.[\-0-9a-fA-F]+\.checkpoint(\.\d+\.\d+)?\.parquet").unwrap());
 static CHECKPOINT_FILE_PATTERN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\d+\.checkpoint(\.\d+\.\d+)?\.parquet").unwrap());
 static DELTA_FILE_PATTERN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d+\.json$").unwrap());
@@ -61,6 +63,13 @@ pub(crate) trait PathExt {
     fn is_checkpoint_file(&self) -> bool {
         self.filename()
             .map(|name| CHECKPOINT_FILE_PATTERN.captures(name).is_some())
+            .unwrap_or(false)
+    }
+
+    /// Returns true if the file is a checkpoint parquet file
+    fn is_tgroup_checkpoint_file(&self) -> bool {
+        self.filename()
+            .map(|name| TGROUP_CHECKPOINT_FILE_PATTERN.captures(name).is_some())
             .unwrap_or(false)
     }
 
@@ -100,9 +109,8 @@ impl LogSegment {
         version: Option<i64>, // optional — if provided, load that exact version
         store: &dyn ObjectStore, // backend file system abstraction (S3, local, etc.)
     ) -> DeltaResult<Self> {
-
         let log_url = table_root.child("_delta_log"); // s3://bucket/path/to/table/_delta_log/
-        
+
         let maybe_cp = read_last_checkpoint(store, &log_url).await?;
 
         // List relevant files from log
@@ -151,20 +159,24 @@ impl LogSegment {
         has_tgroup: bool,
         metadata_id: Option<String>,
     ) -> DeltaResult<Self> {
-
         let log_url = table_root.child("_delta_log"); // s3://bucket/path/to/table/_delta_log/
-        
-        let maybe_cp = read_last_checkpoint_with_tgroup(store, &log_url, metadata_id.clone()).await?;
+
+        let maybe_cp =
+            read_last_checkpoint_with_tgroup(store, &log_url, metadata_id.clone()).await?;
 
         // List relevant files from log
         let (mut commit_files, checkpoint_files, _) = match (maybe_cp, version) {
-            (Some(cp), None) => list_log_files_with_checkpoint_tgroup(&cp, store, &log_url, metadata_id.clone()).await?,
+            (Some(cp), None) => {
+                list_log_files_with_checkpoint_tgroup(&cp, store, &log_url, metadata_id.clone())
+                    .await?
+            }
             (Some(cp), Some(v)) if cp.version <= v => {
-                list_log_files_with_checkpoint_tgroup(&cp, store, &log_url, metadata_id.clone()).await?
+                list_log_files_with_checkpoint_tgroup(&cp, store, &log_url, metadata_id.clone())
+                    .await?
             }
             _ => list_log_files(store, &log_url, version, None).await?,
         };
-        
+
         if let Some(version) = version {
             commit_files.retain(|meta| meta.location.commit_version() <= Some(version));
         }
@@ -306,18 +318,17 @@ impl LogSegment {
                 async move { store.get(&meta.location).await?.bytes().await }
             })
             .buffered(config.log_buffer_size);
-    
+
         let record_batch = json::decode_stream(decoder, stream).map(move |result| {
             result.map(|rb| {
                 match &table_id {
                     Some(id) => {
                         if rb.column_by_name("table_id").is_some() {
-                            let table_id_col = extract::extract_and_cast::<StringArray>(&rb, "table_id")
-                                .unwrap();
+                            let table_id_col =
+                                extract::extract_and_cast::<StringArray>(&rb, "table_id").unwrap();
                             let filter = regexp_is_match_scalar(table_id_col, id, None).unwrap();
                             filter_record_batch(&rb, &filter).unwrap()
-                        }
-                        else{
+                        } else {
                             rb
                         }
                     }
@@ -327,17 +338,16 @@ impl LogSegment {
         });
         Ok(record_batch.boxed())
     }
-    
+
     pub(super) fn commit_stream(
         &self,
         store: Arc<dyn ObjectStore>,
         read_schema: &Schema,
         config: &DeltaTableConfig,
     ) -> DeltaResult<BoxStream<'_, DeltaResult<RecordBatch>>> {
-        return self.commit_stream_with_tableid(store, read_schema, config, None);    
+        return self.commit_stream_with_tableid(store, read_schema, config, None);
     }
-    
-    
+
     pub(super) fn checkpoint_stream(
         &self,
         store: Arc<dyn ObjectStore>,
@@ -489,7 +499,7 @@ struct CheckpointMetadata {
     /// The version of the table when the last checkpoint was made.
     #[allow(unreachable_pub)] // used by acceptance tests (TODO make an fn accessor?)
     pub version: i64,
-    pub tgroup_uri: Option<String>, 
+    pub tgroup_uri: Option<String>,
     ///stores tgroup file path
     /// The number of actions that are stored in the checkpoint.
     pub(crate) size: i64,
@@ -512,7 +522,6 @@ struct TGroup {
     pub timestamp: Option<i64>,
     pub redirectState: Option<String>,
 }
-
 
 /// Try reading the `_last_checkpoint` file.
 ///
@@ -593,7 +602,7 @@ async fn list_log_files_with_checkpoint(
     // NOTE: this will sort in reverse order
     commit_files.sort_unstable_by(|a, b| b.location.cmp(&a.location));
 
-    let mut tgroup_uri: Option<String> = None;    
+    let mut tgroup_uri: Option<String> = None;
 
     let checkpoint_files = files
         .iter()
@@ -610,7 +619,6 @@ async fn list_log_files_with_checkpoint(
         let msg = format!(
             "Number of checkpoint files '{}' is not equal to number of checkpoint metadata parts '{:?}'",
             checkpoint_files.len(),
-            cp.parts
         );
         Err(DeltaTableError::MetadataError(msg))
     } else {
@@ -627,14 +635,15 @@ async fn list_log_files_with_checkpoint_tgroup(
 ) -> DeltaResult<(Vec<ObjectMeta>, Vec<ObjectMeta>, Option<String>)> {
     // let version_prefix = format!("{:020}", cp.version);
 
-    let new_str = if let Some(ref id) = metadata_id {
-        format!("{:020}.{}", cp.version, id)
-    } else {
-        LAST_CHECKPOINT_FILE_NAME.to_string()
-    };
+    // let new_str = if let Some(ref id) = metadata_id {
+    //     format!("{:020}.{}", cp.version, id)
+    // } else {
+    //     format!("{:020}", cp.version)
+    // };
     // let start_from = log_root.child(new_str);
-    let start_from = log_root.child(new_str.clone());
-    // println!("Extracted name : {}", new_str);
+    let start_from = log_root.child(format!("{:020}", cp.version));
+    println!("\n\nMetadata ID : {:?}", metadata_id);
+    println!("Extracted start_from : {:?}", start_from);
 
     let files = fs_client
         .list_with_offset(Some(log_root), &start_from)
@@ -644,6 +653,8 @@ async fn list_log_files_with_checkpoint_tgroup(
         // TODO this filters out .crc files etc which start with "." - how do we want to use these kind of files?
         .filter(|f| f.location.commit_version().is_some())
         .collect::<Vec<_>>();
+
+    println!("Files: {:?}", files);
 
     let mut commit_files = files
         .iter()
@@ -659,18 +670,50 @@ async fn list_log_files_with_checkpoint_tgroup(
     // NOTE: this will sort in reverse order
     commit_files.sort_unstable_by(|a, b| b.location.cmp(&a.location));
 
-    let mut tgroup_uri: Option<String> = None;    
+    println!("Commit files: {:?}", commit_files);
+
+    let tgroup_uri: Option<String> = None;
 
     let checkpoint_files = files
         .iter()
         .filter_map(|f| {
-            if f.location.is_checkpoint_file() && f.location.commit_version() == Some(cp.version) {
-                Some(f.clone())
+            println!("File name: {:?}", f.location);
+            println!(
+                "f.location.is_checkpoint_file(): {:?}",
+                f.location.is_checkpoint_file()
+            );
+            println!(
+                "f.location.commit_version(): {:?}",
+                f.location.commit_version()
+            );
+            if f.location.is_tgroup_checkpoint_file()
+                && f.location.commit_version() == Some(cp.version)
+            {
+                println!("Is checkpoint with right version (with new regex)!");
+                match f.location.filename() {
+                    Some(filename) => match &metadata_id {
+                        Some(id) => {
+                            if filename.contains(id) {
+                                println!("Matched UUID");
+                                Some(f.clone())
+                            } else {
+                                println!("Did not match UUID");
+                                None
+                            }
+                        }
+                        None => None,
+                    },
+                    None => None,
+                }
             } else {
                 None
             }
         })
         .collect_vec();
+
+    println!("Checkpoint files: {:?}", checkpoint_files);
+    println!("checkpoint_files.len() = {:?}", checkpoint_files.len());
+    println!("cp.parts.unwrap_or(1) = {:?}", cp.parts.unwrap_or(1));
 
     if checkpoint_files.len() != cp.parts.unwrap_or(1) as usize {
         let msg = format!(
