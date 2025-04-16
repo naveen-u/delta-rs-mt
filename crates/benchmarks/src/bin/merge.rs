@@ -15,7 +15,16 @@ use deltalake_core::{
     arrow::{
         self,
         datatypes::{DataType, Field},
-    }, datafusion::prelude::{CsvReadOptions, SessionContext}, delta_datafusion::{DeltaScanConfig, DeltaTableProvider}, kernel::Action, operations::{delete::DeleteMetrics, merge::{MergeBuilder, MergeMetrics}, update::UpdateMetrics}, DeltaOps, DeltaTable, DeltaTableBuilder, DeltaTableError, ObjectStore, Path
+    },
+    datafusion::prelude::{CsvReadOptions, SessionContext},
+    delta_datafusion::{DeltaScanConfig, DeltaTableProvider},
+    kernel::Action,
+    operations::{
+        delete::DeleteMetrics,
+        merge::{MergeBuilder, MergeMetrics},
+        update::UpdateMetrics,
+    },
+    DeltaOps, DeltaTable, DeltaTableBuilder, DeltaTableError, ObjectStore, Path,
 };
 // use deltalake_core::table;
 use deltalake_core::{operations::transaction::PreCommit, protocol::SaveMode};
@@ -280,7 +289,14 @@ async fn benchmark_merge_tpcds_nocommit(
     path: String,
     parameters: MergePerfParams,
     merge: fn(DataFrame, DeltaTable) -> Result<MergeBuilder, DeltaTableError>,
-) -> Result<(core::time::Duration, MergeMetrics, &'static mut PreCommit<'static>), DataFusionError> {
+) -> Result<
+    (
+        core::time::Duration,
+        MergeMetrics,
+        &'static mut PreCommit<'static>,
+    ),
+    DataFusionError,
+> {
     let table = DeltaTableBuilder::from_uri(path.clone()).load().await?;
     let file_count = table.snapshot()?.files_count();
 
@@ -379,14 +395,15 @@ async fn tgroup_commit(pre_commits: Vec<PreCommit<'static>>) -> core::time::Dura
     let mut combined_actions: Vec<Action> = Vec::new();
 
     // Process every provided precommit.
-    for precommit in pre_commits.iter(){
-
+    for precommit in pre_commits.iter() {
         for action in precommit.data().actions.iter() {
             combined_actions.push(action.clone());
         }
     }
 
-    let mut combined_precommit = pre_commits.into_iter().next()
+    let mut combined_precommit = pre_commits
+        .into_iter()
+        .next()
         .expect("No precommits provided");
     combined_precommit.data_mut().actions = combined_actions;
 
@@ -728,14 +745,17 @@ async fn main() {
             txn_count,
             group_id,
         }) => {
-            let tables: Vec<&str> = vec!["/home/divyams/Code_Delta/tpcds-delta/web_returns", "/home/divyams/Code_Delta/tpcds-delta/web_returns_2"];
+            let tables: Vec<&str> = vec![
+                "/home/divyams/Code_Delta/tpcds-delta/web_returns",
+                "/home/divyams/Code_Delta/tpcds-delta/web_returns_2",
+            ];
             // Comment after once - To Do
-            // for table_path in &tables{ 
+            // for table_path in &tables{
             //     let mut table = DeltaTableBuilder::from_uri(table_path).load().await.unwrap();
             //     // deltalake::open_table(table_path).await?;
             //     // let table = DeltaTableBuilder::from_uri(table_path.to_string()).load();
             //     table.add_to_tgroup("/home/divyams/Code_Delta/tpcds-delta/web_returns_tgroup").await.unwrap();
-                
+
             // };
             let benches = vec![MTBench::new(
                 "delete_only_fileMatchedFraction_0.05_rowMatchedFraction_0.05",
@@ -907,10 +927,8 @@ async fn main() {
                         duration_ms.push(res.0.as_millis() as u32);
                         data.push(json!(res.1).to_string());
                     }
-                    let owned_precommits: Vec<PreCommit<'static>> = pre_commits
-                        .into_iter()
-                        .map(|p| p.clone())
-                        .collect();
+                    let owned_precommits: Vec<PreCommit<'static>> =
+                        pre_commits.into_iter().map(|p| p.clone()).collect();
                     let duration = tgroup_commit(owned_precommits).await;
 
                     // let duration: std::time::Duration = tgroup_commit(pre_commits).await;

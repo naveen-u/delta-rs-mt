@@ -55,9 +55,7 @@ use datafusion_expr::{
     Extension, LogicalPlan, LogicalPlanBuilder, UserDefinedLogicalNode, UNNAMED_TABLE,
 };
 
-
 use crate::operations::transaction::PreCommit;
-
 
 use delta_kernel::schema::{ColumnMetadataKey, StructType};
 use filter::try_construct_early_filter;
@@ -166,55 +164,52 @@ impl super::Operation<()> for MergeBuilder {
 }
 
 impl MergeBuilder {
-
-
-    pub async fn tgroup_commit<'a>(&'a self) -> DeltaResult<(PreCommit<'a>, MergeMetrics)>  {
+    pub async fn tgroup_commit<'a>(&'a self) -> DeltaResult<(PreCommit<'a>, MergeMetrics)> {
         let this = self;
 
         // Box::pin(async move {
-            PROTOCOL.can_write_to(&this.snapshot.snapshot)?;
+        PROTOCOL.can_write_to(&this.snapshot.snapshot)?;
 
-            if !this.snapshot.load_config().require_files {
-                return Err(DeltaTableError::NotInitializedWithFiles("MERGE".into()));
-            }
+        if !this.snapshot.load_config().require_files {
+            return Err(DeltaTableError::NotInitializedWithFiles("MERGE".into()));
+        }
 
-            let operation_id = this.get_operation_id();
-            this.pre_execute(operation_id).await?;
+        let operation_id = this.get_operation_id();
+        this.pre_execute(operation_id).await?;
 
-            let state = this.state.as_ref().unwrap();
-            // .unwrap_or_else(|| {
-            //     let config: SessionConfig = DeltaSessionConfig::default().into();
-            //     let session = SessionContext::new_with_config(config);
+        let state = this.state.as_ref().unwrap();
+        // .unwrap_or_else(|| {
+        //     let config: SessionConfig = DeltaSessionConfig::default().into();
+        //     let session = SessionContext::new_with_config(config);
 
-            //     // If a user provides their own their DF state then they must register the store themselves
-            //     register_store(this.log_store.clone(), session.runtime_env());
+        //     // If a user provides their own their DF state then they must register the store themselves
+        //     register_store(this.log_store.clone(), session.runtime_env());
 
-            //     &session.state()
-            // });
+        //     &session.state()
+        // });
 
-            let res = execute_precommit(
-                this.predicate.clone(),
-                this.source.clone(),
-                this.log_store.clone(),
-                &this.snapshot,
-                state.clone(),
-                this.writer_properties.clone(),
-                this.commit_properties.clone(),
-                this.safe_cast,
-                this.streaming,
-                this.source_alias.clone(),
-                this.target_alias.clone(),
-                this.merge_schema,
-                this.match_operations.clone(),
-                this.not_match_operations.clone(),
-                this.not_match_source_operations.clone(),
-                operation_id,
-                this.custom_execute_handler.as_ref(),
-            )
-            .await?;
+        let res = execute_precommit(
+            this.predicate.clone(),
+            this.source.clone(),
+            this.log_store.clone(),
+            &this.snapshot,
+            state.clone(),
+            this.writer_properties.clone(),
+            this.commit_properties.clone(),
+            this.safe_cast,
+            this.streaming,
+            this.source_alias.clone(),
+            this.target_alias.clone(),
+            this.merge_schema,
+            this.match_operations.clone(),
+            this.not_match_operations.clone(),
+            this.not_match_source_operations.clone(),
+            operation_id,
+            this.custom_execute_handler.as_ref(),
+        )
+        .await?;
         Ok(res)
     }
-
 
     /// Create a new [`MergeBuilder`]
     pub fn new<E: Into<Expression>>(
@@ -771,34 +766,19 @@ impl ExtensionPlanner for MergeMetricExtensionPlanner {
     }
 }
 
-
 fn update_action_with_table_id(action: &mut Action, table_uuid: String) {
     match action {
-        Action::Metadata(meta) => {
-            meta.table_id = Some(table_uuid)
-        }
-        Action::Txn(txn) => {
-            txn.table_id = Some(table_uuid)
-        }
-        Action::CommitInfo(ci) => {
-            ci.table_id = Some(table_uuid)
-        }
-        Action::Remove(rem) => {
-            rem.table_id = Some(table_uuid)
-        }
-        Action::Add(add) => {
-            add.table_id = Some(table_uuid)
-        }
-        Action::Protocol(proto) => {
-            proto.table_id = Some(table_uuid)
-        }
+        Action::Metadata(meta) => meta.table_id = Some(table_uuid),
+        Action::Txn(txn) => txn.table_id = Some(table_uuid),
+        Action::CommitInfo(ci) => ci.table_id = Some(table_uuid),
+        Action::Remove(rem) => rem.table_id = Some(table_uuid),
+        Action::Add(add) => add.table_id = Some(table_uuid),
+        Action::Protocol(proto) => proto.table_id = Some(table_uuid),
         // For all other Action variants that do not have a table_id field,
         // simply clone the action.
-        _ => {},
+        _ => {}
     }
 }
-
-
 
 #[allow(clippy::too_many_arguments)]
 async fn execute_precommit<'a>(
@@ -1522,13 +1502,10 @@ async fn execute_precommit<'a>(
         .with_post_commit_hook_handler(handle.cloned())
         .build(Some(snapshot), log_store.clone(), operation);
 
-    
     for mut action in precommit.data_mut().actions.iter_mut() {
         update_action_with_table_id(&mut action, String::from(&snapshot.metadata().id));
     }
 
-
-    
     Ok((precommit, metrics))
 }
 
@@ -1552,7 +1529,9 @@ async fn execute(
     handle: Option<&Arc<dyn CustomExecuteHandler>>,
 ) -> DeltaResult<(DeltaTableState, MergeMetrics)> {
     // Await the precommit to finalize the commit.
-    let result = execute_precommit(predicate, source,
+    let result = execute_precommit(
+        predicate,
+        source,
         log_store,
         &snapshot,
         _state,
@@ -1567,17 +1546,17 @@ async fn execute(
         not_match_target_operations,
         not_match_source_operations,
         operation_id,
-        handle).await?;
+        handle,
+    )
+    .await?;
 
     let (precommit, metrics) = result;
 
     let commit = precommit.await?;
 
-    
     // Return the snapshot from the finalized commit together with the metrics.
     Ok((commit.snapshot(), metrics))
 }
-
 
 fn modify_schema(
     ending_schema: &mut SchemaBuilder,

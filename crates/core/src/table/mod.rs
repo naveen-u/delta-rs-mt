@@ -460,7 +460,7 @@ impl DeltaTable {
         &mut self,
         max_version: Option<i64>,
     ) -> Result<(), DeltaTableError> {
-        if self.has_tgroup{
+        if self.has_tgroup {
             match self.state.as_mut() {
                 Some(state) => state.update(self.log_store.clone(), max_version).await,
                 _ => {
@@ -477,8 +477,7 @@ impl DeltaTable {
                     Ok(())
                 }
             }
-        }
-        else{
+        } else {
             match self.state.as_mut() {
                 Some(state) => state.update(self.log_store.clone(), max_version).await,
                 _ => {

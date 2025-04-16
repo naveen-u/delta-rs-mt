@@ -283,7 +283,7 @@ impl TableReference for DeltaTableState {
 }
 
 /// Data that was actually written to the log store.
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub struct CommitData {
     /// The actions
     pub actions: Vec<Action>,
@@ -537,14 +537,14 @@ pub struct PreCommit<'a> {
     init_version: Option<i64>,
 }
 
-
 impl<'a> PreCommit<'a> {
     pub fn data(&self) -> &CommitData {
         &self.data
     }
 
     pub fn data_mut(&mut self) -> &mut CommitData {
-        &mut self.data    }
+        &mut self.data
+    }
 }
 
 impl<'a> PreCommit<'a> {
@@ -605,14 +605,16 @@ impl<'a> PreCommit<'a> {
                     if let Ok(s) = std::str::from_utf8(bytes) {
                         println!("[Debug] LogBytes (utf-8): {}", s);
                     } else {
-                        println!("[Debug] LogBytes not valid UTF-8, hex preview: {:02x?}", &bytes[..std::cmp::min(32, bytes.len())]);
+                        println!(
+                            "[Debug] LogBytes not valid UTF-8, hex preview: {:02x?}",
+                            &bytes[..std::cmp::min(32, bytes.len())]
+                        );
                     }
                 }
                 CommitOrBytes::TmpCommit(path) => {
                     println!("[Debug] TmpCommit path: {}", path);
                 }
             }
-            
 
             Ok(PreparedCommit {
                 commit_or_bytes,
@@ -941,7 +943,6 @@ pub struct FinalizedCommit {
     /// Metrics associated with the commit operation
     pub metrics: Metrics,
 }
-
 
 impl FinalizedCommit {
     /// The new table state after a commit

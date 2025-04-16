@@ -86,7 +86,6 @@ pub struct IntermediateCommitData {
     pub commit_properties: CommitProperties,
 }
 
-
 #[derive(thiserror::Error, Debug)]
 pub(crate) enum WriteError {
     #[error("No data source supplied to write command.")]
@@ -470,9 +469,12 @@ impl WriteBuilder {
         let mut new_schema = None;
         if let Some(snapshot) = &self.snapshot {
             let table_schema = snapshot.input_schema()?;
-            if let Err(schema_err) = try_cast_schema(source_schema.fields(), table_schema.fields()) {
+            if let Err(schema_err) = try_cast_schema(source_schema.fields(), table_schema.fields())
+            {
                 schema_drift = true;
-                if self.mode == SaveMode::Overwrite && self.schema_mode == Some(SchemaMode::Overwrite) {
+                if self.mode == SaveMode::Overwrite
+                    && self.schema_mode == Some(SchemaMode::Overwrite)
+                {
                     new_schema = None;
                 } else if self.schema_mode == Some(SchemaMode::Merge) {
                     new_schema = Some(merge_arrow_schema(
@@ -483,7 +485,9 @@ impl WriteBuilder {
                 } else {
                     return Err(schema_err.into());
                 }
-            } else if self.mode == SaveMode::Overwrite && self.schema_mode == Some(SchemaMode::Overwrite) {
+            } else if self.mode == SaveMode::Overwrite
+                && self.schema_mode == Some(SchemaMode::Overwrite)
+            {
                 new_schema = None;
             } else {
                 new_schema = Some(merge_arrow_schema(
@@ -580,9 +584,9 @@ impl WriteBuilder {
             .snapshot
             .as_ref()
             .map(|snapshot| snapshot.table_config());
-        let target_file_size = self.target_file_size.or_else(|| {
-            Some(super::get_target_file_size(&config, &self.configuration) as usize)
-        });
+        let target_file_size = self
+            .target_file_size
+            .or_else(|| Some(super::get_target_file_size(&config, &self.configuration) as usize));
         let (num_indexed_cols, stats_columns) =
             super::get_num_idx_cols_and_stats_columns(config, self.configuration);
         let writer_stats_config = WriterStatsConfig {
@@ -678,8 +682,7 @@ impl WriteBuilder {
         metrics.num_added_rows = num_added_rows;
         metrics.num_added_files = add_actions.len();
         actions.extend(add_actions);
-        metrics.execution_time_ms =
-            Instant::now().duration_since(exec_start).as_millis() as u64;
+        metrics.execution_time_ms = Instant::now().duration_since(exec_start).as_millis() as u64;
 
         let operation = DeltaOperation::Write {
             mode: self.mode,
@@ -698,17 +701,17 @@ impl WriteBuilder {
             serde_json::to_value(&metrics)?,
         );
 
-        let table_data: Option<&'static dyn TableReference> = self.snapshot.take().map(|snapshot| {
-            // Wrap the snapshot into an Arc.
-            let arc: Arc<dyn TableReference> = Arc::new(snapshot);
-            // Box the Arc so we can leak it.
-            let boxed: Box<Arc<dyn TableReference>> = Box::new(arc);
-            // Leak the Box, obtaining a &'static mut Arc<dyn TableReference>.
-            let leaked: &'static Arc<dyn TableReference> = Box::leak(boxed);
-            // Dereference the Arc to get a &'static dyn TableReference.
-            &**leaked
-        });
-    
+        let table_data: Option<&'static dyn TableReference> =
+            self.snapshot.take().map(|snapshot| {
+                // Wrap the snapshot into an Arc.
+                let arc: Arc<dyn TableReference> = Arc::new(snapshot);
+                // Box the Arc so we can leak it.
+                let boxed: Box<Arc<dyn TableReference>> = Box::new(arc);
+                // Leak the Box, obtaining a &'static mut Arc<dyn TableReference>.
+                let leaked: &'static Arc<dyn TableReference> = Box::leak(boxed);
+                // Dereference the Arc to get a &'static dyn TableReference.
+                &**leaked
+            });
 
         // Build the commit builder.
         let precommit = CommitBuilder::from(commit_properties)
@@ -746,7 +749,7 @@ impl std::future::IntoFuture for WriteBuilder {
 
             let opid = *precommit.opid();
             let commit = precommit.await?;
-            
+
             if let Some(handler) = custom_execute_handler {
                 handler.post_execute(&log_store, opid).await?;
             }
@@ -759,11 +762,10 @@ impl std::future::IntoFuture for WriteBuilder {
 impl WriteBuilder {
     /// Runs through the precommit preparation steps and returns a vector of actions,
     /// without finalizing (awaiting) the commit.
-    pub async fn get_precommit(self) ->  DeltaResult<PreCommit<'static>>
-    {
+    pub async fn get_precommit(self) -> DeltaResult<PreCommit<'static>> {
         // Call the helper subroutine to prepare the precommit.
         let precommit = WriteBuilder::prepare_precommit(self).await?;
-        
+
         // Optionally, print the actions for debugging.
         println!("Done with precommit?");
         // for action in precommit.data().actions.iter() {
@@ -774,7 +776,6 @@ impl WriteBuilder {
         // Ok(Box::leak(boxed))
 
         Ok(precommit)
-
     }
 }
 

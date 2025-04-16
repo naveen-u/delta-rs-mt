@@ -619,6 +619,7 @@ async fn list_log_files_with_checkpoint(
         let msg = format!(
             "Number of checkpoint files '{}' is not equal to number of checkpoint metadata parts '{:?}'",
             checkpoint_files.len(),
+            cp.parts
         );
         Err(DeltaTableError::MetadataError(msg))
     } else {

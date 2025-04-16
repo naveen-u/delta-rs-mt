@@ -74,7 +74,6 @@ pub struct Metadata {
     pub configuration: HashMap<String, Option<String>>,
     /// Table UUID for the commit T-group commits
     pub table_id: Option<String>,
-
 }
 
 impl Metadata {

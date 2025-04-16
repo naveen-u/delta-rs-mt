@@ -332,11 +332,11 @@ impl DeltaTableBuilder {
         println!("{}", self.table_uri);
         let mut builder = self.clone();
         builder.table_uri_orig = Some(builder.table_uri.clone());
-    
+
         let mut table = builder.build()?;
         let log_store = table.log_store();
         let log_path = &Path::default().child("_delta_log");
-    
+
         // Step 2: List log files using log_segment's function.
         let (commit_files, _checkpoint_files, _tgroup_uri) =
             crate::kernel::snapshot::log_segment::list_log_files(
@@ -346,7 +346,7 @@ impl DeltaTableBuilder {
                 None,
             )
             .await?;
-    
+
         // Extract tgroup URI from the newest (first) commit file
         if let Some(newest_commit) = commit_files.first() {
             let bytes = log_store
@@ -359,7 +359,9 @@ impl DeltaTableBuilder {
                 if let Ok(json_value) = serde_json::from_slice::<serde_json::Value>(line) {
                     if let Some(tgroup_obj) = json_value.get("tGroup") {
                         if let Some(uri) = tgroup_obj.get("tgroupUri").and_then(|v| v.as_str()) {
-                            if let Some(redirect_state) = tgroup_obj.get("redirectState").and_then(|v| v.as_str()) {
+                            if let Some(redirect_state) =
+                                tgroup_obj.get("redirectState").and_then(|v| v.as_str())
+                            {
                                 table.redirect_state = Some(redirect_state.to_owned());
                                 let uri_str = format!("file://{}/", uri.trim_end_matches('/'));
                                 let tgroup_url = ensure_table_uri(&uri_str)?;
@@ -368,21 +370,19 @@ impl DeltaTableBuilder {
                                     StorageOptions::default(),
                                     None,
                                 )?;
-                                
+
                                 table.table_log_store = Some(table.log_store);
                                 table.log_store = tgroup_logstore;
                                 table.has_tgroup = true;
                             }
-                            
-                            
+
                             break;
                         }
                     }
                 }
             }
         }
-        
-    
+
         // Extract metadata id from the oldest (last) commit file
         let mut metadata_id: Option<String> = None;
         if let Some(oldest_commit) = commit_files.last() {
@@ -397,18 +397,18 @@ impl DeltaTableBuilder {
                     if let Some(meta_obj) = json_value.get("metaData") {
                         if let Some(id) = meta_obj.get("id").and_then(|v| v.as_str()) {
                             metadata_id = Some(id.to_string());
-                            break; 
+                            break;
                         }
                     }
                 }
             }
         }
-    
+
         if let Some(ref id) = metadata_id {
             println!("Extracted metadata id: {}", id);
             table.metadata_id = Some(id.to_string());
         }
-    
+
         match version {
             DeltaVersion::Newest => table.load().await?,
             DeltaVersion::Version(v) => table.load_version(v).await?,
@@ -416,7 +416,6 @@ impl DeltaTableBuilder {
         }
         Ok(table)
     }
-    
 }
 
 enum UriType {

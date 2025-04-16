@@ -45,7 +45,6 @@ pub use self::log_data::*;
 
 mod log_data;
 /// pub(crate) mod log_segment;
-
 pub mod log_segment;
 
 pub(crate) mod parse;
@@ -101,16 +100,23 @@ impl Snapshot {
         has_tgroup: bool,
         metadata_id: Option<String>,
     ) -> DeltaResult<Self> {
-        let log_segment = LogSegment::try_new_with_tgroup(table_root, version, store.as_ref(), has_tgroup, metadata_id).await?;
+        let log_segment = LogSegment::try_new_with_tgroup(
+            table_root,
+            version,
+            store.as_ref(),
+            has_tgroup,
+            metadata_id,
+        )
+        .await?;
         let (protocol, metadata) = log_segment.read_metadata(store.clone(), &config).await?;
-        if !has_tgroup{
+        if !has_tgroup {
             if metadata.is_none() || protocol.is_none() {
                 return Err(DeltaTableError::Generic(
                     "Cannot read metadata from log segment".into(),
                 ));
             };
         }
-        
+
         let (metadata, protocol) = (metadata.unwrap(), protocol.unwrap());
         let schema = serde_json::from_str(&metadata.schema_string)?;
         Ok(Self {
@@ -262,7 +268,7 @@ impl Snapshot {
             store.clone(),
             &StructType::new(schema_actions.iter().map(|a| a.schema_field().clone())),
             &self.config,
-            Some(self.metadata.id.clone())
+            Some(self.metadata.id.clone()),
         )?;
 
         ReplayStream::try_new(log_stream, checkpoint_stream, self, visitors)
@@ -426,8 +432,15 @@ impl EagerSnapshot {
             .iter()
             .flat_map(get_visitor)
             .collect::<Vec<_>>();
-        let snapshot =
-            Snapshot::try_new_with_tgroup(table_root, store.clone(), config.clone(), version, has_tgroup, metadata_id).await?;
+        let snapshot = Snapshot::try_new_with_tgroup(
+            table_root,
+            store.clone(),
+            config.clone(),
+            version,
+            has_tgroup,
+            metadata_id,
+        )
+        .await?;
 
         let files = match config.require_files {
             true => snapshot.files(store, &mut visitors)?.try_collect().await?,

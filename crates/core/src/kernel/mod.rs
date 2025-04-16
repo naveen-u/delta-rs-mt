@@ -12,7 +12,6 @@ pub mod scalars;
 // mod snapshot;
 pub mod snapshot;
 
-
 pub use error::*;
 pub use models::*;
 pub use snapshot::*;

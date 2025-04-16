@@ -106,8 +106,6 @@ static COMMIT_INFO_FIELD: LazyLock<StructField> = LazyLock::new(|| {
             ),
             // NEW
             StructField::new("table_id", DataType::STRING, true),
-
-            
         ]),
         true,
     )
