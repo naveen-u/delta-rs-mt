@@ -262,8 +262,10 @@ pub struct DeltaTable {
     pub tgroup_log_segment: Option<LogSegment>,
     /// tgroup log store
     pub(crate) tgroup_log_store: Option<LogStoreRef>,
+    pub(crate) table_log_store: Option<LogStoreRef>,
     pub has_tgroup: bool,
     pub metadata_id: Option<String>,
+    pub redirect_state: Option<String>,
 }
 
 impl Serialize for DeltaTable {
@@ -319,8 +321,10 @@ impl<'de> Deserialize<'de> for DeltaTable {
                     log_store,
                     tgroup_log_segment: None,
                     tgroup_log_store: None,
+                    table_log_store: None,
                     has_tgroup: false,
                     metadata_id: None,
+                    redirect_state: None,
                 };
                 Ok(table)
             }
@@ -342,8 +346,10 @@ impl DeltaTable {
             config,
             tgroup_log_segment: None,
             tgroup_log_store: None,
+            table_log_store: None,
             has_tgroup: false,
             metadata_id: None,
+            redirect_state: None,
         }
     }
 
@@ -359,8 +365,10 @@ impl DeltaTable {
             config: Default::default(),
             tgroup_log_segment: None,
             tgroup_log_store: None,
+            table_log_store: None,
             has_tgroup: false,
             metadata_id: None,
+            redirect_state: None,
         }
     }
 

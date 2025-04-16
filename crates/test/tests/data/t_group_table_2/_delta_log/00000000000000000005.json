@@ -1,2 +1,2 @@
-{"tGroup":{"tableId":"5fba94ed-9794-4965-ba6e-6ee3c0d22af9","tgroupUri":"/home/naveen/Projects/delta-rs-mt/crates/test/tests/data/t_group_1","timestamp":1744418323429,"redirectState":"ReadOnly"}}
-{"commitInfo":{"timestamp":1744418323433,"operation":"TGROUP START","operationParameters":{"tgroup_uri":"/home/naveen/Projects/delta-rs-mt/crates/test/tests/data/t_group_1"},"clientVersion":"delta-rs.py-0.25.2"}}
+{"tGroup":{"tableId":"5fba94ed-9794-4965-ba6e-6ee3c0d22af9","tgroupUri":"/home/gnilay/si330v2/delta/delta-rs-mt/crates/test/tests/data/t_group_1","timestamp":1744418323429,"redirectState":"ReadOnly"}}
+{"commitInfo":{"timestamp":1744418323433,"operation":"TGROUP START","operationParameters":{"tgroup_uri":"/home/gnilay/si330v2/delta/delta-rs-mt/crates/test/tests/data/t_group_1"},"clientVersion":"delta-rs.py-0.25.2"}}
