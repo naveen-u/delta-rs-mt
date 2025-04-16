@@ -12,7 +12,6 @@ use datafusion::functions::expr_fn::random;
 use datafusion::{datasource::MemTable, prelude::DataFrame};
 use datafusion_common::DataFusionError;
 use datafusion_expr::{cast, col, lit};
-use deltalake_core::protocol::SaveMode;
 use deltalake_core::{
     arrow::{
         self,
@@ -25,6 +24,7 @@ use deltalake_core::{
     operations::update::UpdateMetrics,
     DeltaOps, DeltaTable, DeltaTableBuilder, DeltaTableError, ObjectStore, Path,
 };
+use deltalake_core::{checkpoints::create_checkpoint, protocol::SaveMode};
 
 use arrow::array::{Decimal128Builder, Int32Array, Int64Array};
 use std::error::Error;
@@ -842,6 +842,7 @@ enum Command {
     WriteMultiTable(WriteMultiTable),
     WriteMultiTableTGroup(WriteMultiTable),
     AddToTGroup(AddTGroup),
+    Checkpoint(Checkpoint),
 }
 
 #[derive(Debug, Args)]
@@ -887,6 +888,11 @@ struct WriteMultiTable {
 struct AddTGroup {
     table: String,
     tgroup: String,
+}
+
+#[derive(Debug, Args)]
+struct Checkpoint {
+    table: String,
 }
 
 #[derive(Debug, Args)]
@@ -1303,6 +1309,10 @@ async fn main() {
         Command::AddToTGroup(AddTGroup { table, tgroup }) => {
             let mut table = DeltaTableBuilder::from_uri(table).load().await.unwrap();
             table.add_to_tgroup(&tgroup).await.unwrap();
+        }
+        Command::Checkpoint(Checkpoint { table }) => {
+            let table = DeltaTableBuilder::from_uri(table).load().await.unwrap();
+            create_checkpoint(&table, None).await.unwrap();
         }
     }
 }
