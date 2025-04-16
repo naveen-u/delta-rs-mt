@@ -112,7 +112,6 @@ impl LogSegment {
         let log_url = table_root.child("_delta_log"); // s3://bucket/path/to/table/_delta_log/
 
         let maybe_cp = read_last_checkpoint(store, &log_url).await?;
-
         // List relevant files from log
         let (mut commit_files, checkpoint_files, _) = match (maybe_cp, version) {
             (Some(cp), None) => list_log_files_with_checkpoint(&cp, store, &log_url).await?,
@@ -617,7 +616,7 @@ async fn list_log_files_with_checkpoint(
 
     if checkpoint_files.len() != cp.parts.unwrap_or(1) as usize {
         let msg = format!(
-            "Number of checkpoint files '{}' is not equal to number of checkpoint metadata parts '{:?}'",
+            "Number of checkpoint files in normal '{}' is not equal to number of checkpoint metadata parts '{:?}'",
             checkpoint_files.len(),
             cp.parts
         );
@@ -643,8 +642,6 @@ async fn list_log_files_with_checkpoint_tgroup(
     // };
     // let start_from = log_root.child(new_str);
     let start_from = log_root.child(format!("{:020}", cp.version));
-    println!("\n\nMetadata ID : {:?}", metadata_id);
-    println!("Extracted start_from : {:?}", start_from);
 
     let files = fs_client
         .list_with_offset(Some(log_root), &start_from)
@@ -654,8 +651,6 @@ async fn list_log_files_with_checkpoint_tgroup(
         // TODO this filters out .crc files etc which start with "." - how do we want to use these kind of files?
         .filter(|f| f.location.commit_version().is_some())
         .collect::<Vec<_>>();
-
-    println!("Files: {:?}", files);
 
     let mut commit_files = files
         .iter()
@@ -671,34 +666,20 @@ async fn list_log_files_with_checkpoint_tgroup(
     // NOTE: this will sort in reverse order
     commit_files.sort_unstable_by(|a, b| b.location.cmp(&a.location));
 
-    println!("Commit files: {:?}", commit_files);
-
     let tgroup_uri: Option<String> = None;
 
     let checkpoint_files = files
         .iter()
         .filter_map(|f| {
-            println!("File name: {:?}", f.location);
-            println!(
-                "f.location.is_checkpoint_file(): {:?}",
-                f.location.is_checkpoint_file()
-            );
-            println!(
-                "f.location.commit_version(): {:?}",
-                f.location.commit_version()
-            );
             if f.location.is_tgroup_checkpoint_file()
                 && f.location.commit_version() == Some(cp.version)
             {
-                println!("Is checkpoint with right version (with new regex)!");
                 match f.location.filename() {
                     Some(filename) => match &metadata_id {
                         Some(id) => {
                             if filename.contains(id) {
-                                println!("Matched UUID");
                                 Some(f.clone())
                             } else {
-                                println!("Did not match UUID");
                                 None
                             }
                         }
@@ -712,13 +693,9 @@ async fn list_log_files_with_checkpoint_tgroup(
         })
         .collect_vec();
 
-    println!("Checkpoint files: {:?}", checkpoint_files);
-    println!("checkpoint_files.len() = {:?}", checkpoint_files.len());
-    println!("cp.parts.unwrap_or(1) = {:?}", cp.parts.unwrap_or(1));
-
     if checkpoint_files.len() != cp.parts.unwrap_or(1) as usize {
         let msg = format!(
-            "Number of checkpoint files '{}' is not equal to number of checkpoint metadata parts '{:?}'",
+            "Number of checkpoint files in tgroup '{}' is not equal to number of checkpoint metadata parts '{:?}'",
             checkpoint_files.len(),
             cp.parts
         );

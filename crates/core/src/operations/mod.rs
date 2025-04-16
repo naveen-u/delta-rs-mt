@@ -134,7 +134,8 @@ impl DeltaOps {
     /// };
     /// ```
     pub async fn try_from_uri(uri: impl AsRef<str>) -> DeltaResult<Self> {
-        let mut table = DeltaTableBuilder::from_uri(uri).build()?;
+        // let mut table = DeltaTableBuilder::from_uri(uri).build()?;
+        let mut table = DeltaTableBuilder::from_valid_uri(uri)?.load().await?;
         // We allow for uninitialized locations, since we may want to create the table
         match table.load().await {
             Ok(_) => Ok(table.into()),
