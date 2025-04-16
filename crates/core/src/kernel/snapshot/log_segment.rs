@@ -154,13 +154,13 @@ impl LogSegment {
 
         let log_url = table_root.child("_delta_log"); // s3://bucket/path/to/table/_delta_log/
         
-        let maybe_cp = read_last_checkpoint_with_tgroup(store, &log_url, metadata_id).await?;
+        let maybe_cp = read_last_checkpoint_with_tgroup(store, &log_url, metadata_id.clone()).await?;
 
         // List relevant files from log
         let (mut commit_files, checkpoint_files, _) = match (maybe_cp, version) {
-            (Some(cp), None) => list_log_files_with_checkpoint(&cp, store, &log_url).await?,
+            (Some(cp), None) => list_log_files_with_checkpoint_tgroup(&cp, store, &log_url, metadata_id.clone()).await?,
             (Some(cp), Some(v)) if cp.version <= v => {
-                list_log_files_with_checkpoint(&cp, store, &log_url).await?
+                list_log_files_with_checkpoint_tgroup(&cp, store, &log_url, metadata_id.clone()).await?
             }
             _ => list_log_files(store, &log_url, version, None).await?,
         };
@@ -195,84 +195,6 @@ impl LogSegment {
         // }
     }
 
-    // pub async fn try_new_tgroup(
-    //     tgroup_uri: &str, // full path for tgroup logs /home/gnilay/si330v2/delta/delta-rs-mt/crates/test/tests/data/_tgroup_delta_log
-    //     version: Option<i64>, // optional — if provided, load that exact version
-    //     store: &dyn ObjectStore, // backend file system abstraction (S3, local, etc.)
-    // ) -> DeltaResult<Self> {
-
-    //     // let uri_str = format!("file://{}", table_root.to_string());
-    //     // let tgroup_url = Url::parse(&uri_str)
-    //     // .map_err(|e| DeltaTableError::Generic(format!("Invalid tgroup_uri: {e}")))?;
-    //     let uri_str = format!("file://{}/", tgroup_uri.trim_end_matches('/'));
-        
-
-    //     println!("tgroup_uri1: {}", uri_str);
-    //     let tgroup_url = ensure_table_uri(&uri_str)?; // uses the builder.rs util for consistency
-
-    //     // Get a new object store for the tgroup path
-    //     let tgroup_logstore = logstore_for(
-    //         tgroup_url.clone(),
-    //         StorageOptions::default(), // you can pass in options if needed
-    //         None,
-    //     )?;
-
-    //     let store = tgroup_logstore.object_store(None);
-
-    //     let uri_str = "memory:///_delta_log";
-    //     let tgroup_url = ensure_table_uri(uri_str)?;
-        
-    //     let table_path = object_store::path::Path::from(tgroup_url.path());
-
-
-    //     let log_url = &table_path;//.child(""); // s3://bucket/path/to/table/_delta_log/
-    //     // println!("tgroup_uri2: {:?}", tgroup_uri);
-
-    //     // let uri_str = format!("file://{}/_delta_log", tgroup_uri.trim_end_matches('/'));
-    //     // let log_root_url = ensure_table_uri(&uri_str)?; 
-        
-
-
-    //     let maybe_cp = read_last_checkpoint(store.as_ref(), &log_url).await?;
-
-    //     // List relevant files from log
-    //     let (mut commit_files, checkpoint_files, tgroup_url) = match (maybe_cp, version) {
-    //         (Some(cp), None) => list_log_files_with_checkpoint(&cp, store.as_ref(), &log_url).await?,
-    //         (Some(cp), Some(v)) if cp.version <= v => {
-    //             list_log_files_with_checkpoint(&cp, store.as_ref(), &log_url).await?
-    //         }
-    //         _ => list_log_files(store.as_ref(), &log_url, version, None).await?,
-    //     };
-
-    //     // remove all files above requested version
-    //     if let Some(version) = version {
-    //         commit_files.retain(|meta| meta.location.commit_version() <= Some(version));
-    //     }
-
-    //     let mut segment = Self {
-    //         version: 0,
-    //         commit_files: commit_files.into(),
-    //         checkpoint_files,
-    //     };
-    //     if segment.commit_files.is_empty() && segment.checkpoint_files.is_empty() {
-    //         return Err(DeltaTableError::NotATable("no log files".into()));
-    //     }
-    //     // get the effective version from chosen files
-    //     let version_eff = segment.file_version().ok_or(DeltaTableError::Generic(
-    //         "failed to get effective version".into(),
-    //     ))?; // TODO: A more descriptive error
-    //     segment.version = version_eff;
-    //     segment.validate()?;
-
-    //     if let Some(v) = version {
-    //         if version_eff != v {
-    //             // TODO more descriptive error
-    //             return Err(DeltaTableError::Generic("missing version".into()));
-    //         }
-    //     }
-
-    //     Ok(segment)
-    // }
     /// Try to create a new [`LogSegment`] from a slice of the log.
     ///
     /// This will create a new [`LogSegment`] from the log with all relevant log files
@@ -671,26 +593,73 @@ async fn list_log_files_with_checkpoint(
     // NOTE: this will sort in reverse order
     commit_files.sort_unstable_by(|a, b| b.location.cmp(&a.location));
 
-    let mut tgroup_uri: Option<String> = None;
+    let mut tgroup_uri: Option<String> = None;    
 
-    // Try reading tgroupUri from the first commit file
-    // if let Some(first_commit) = commit_files.first() {
-    //     if let Ok(data) = fs_client.get(&first_commit.location).await {
-    //         let bytes = data.bytes().await?;
-    //         for line in bytes.split(|b| *b == b'\n') {
-    //             if let Ok(json_value) = serde_json::from_slice::<serde_json::Value>(line) {
-    //                 if let Some(tgroup_obj) = json_value.get("tGroup") {
-    //                     if let Some(uri) = tgroup_obj.get("tgroupUri").and_then(|v| v.as_str()) {
-    //                         tgroup_uri = Some(uri.to_string());
-    //                         break;
-    //                     }
-    //                 }
-    //             }
-    //         }
-    //     }
-    // }
-    
+    let checkpoint_files = files
+        .iter()
+        .filter_map(|f| {
+            if f.location.is_checkpoint_file() && f.location.commit_version() == Some(cp.version) {
+                Some(f.clone())
+            } else {
+                None
+            }
+        })
+        .collect_vec();
 
+    if checkpoint_files.len() != cp.parts.unwrap_or(1) as usize {
+        let msg = format!(
+            "Number of checkpoint files '{}' is not equal to number of checkpoint metadata parts '{:?}'",
+            checkpoint_files.len(),
+            cp.parts
+        );
+        Err(DeltaTableError::MetadataError(msg))
+    } else {
+        Ok((commit_files, checkpoint_files, tgroup_uri))
+    }
+}
+
+/// List all log files after a given checkpoint in tgroup.
+async fn list_log_files_with_checkpoint_tgroup(
+    cp: &CheckpointMetadata,
+    fs_client: &dyn ObjectStore,
+    log_root: &Path,
+    metadata_id: Option<String>,
+) -> DeltaResult<(Vec<ObjectMeta>, Vec<ObjectMeta>, Option<String>)> {
+    // let version_prefix = format!("{:020}", cp.version);
+
+    let new_str = if let Some(ref id) = metadata_id {
+        format!("{:020}.{}", cp.version, id)
+    } else {
+        LAST_CHECKPOINT_FILE_NAME.to_string()
+    };
+    // let start_from = log_root.child(new_str);
+    let start_from = log_root.child(new_str.clone());
+    // println!("Extracted name : {}", new_str);
+
+    let files = fs_client
+        .list_with_offset(Some(log_root), &start_from)
+        .try_collect::<Vec<_>>()
+        .await?
+        .into_iter()
+        // TODO this filters out .crc files etc which start with "." - how do we want to use these kind of files?
+        .filter(|f| f.location.commit_version().is_some())
+        .collect::<Vec<_>>();
+
+    let mut commit_files = files
+        .iter()
+        .filter_map(|f| {
+            if f.location.is_commit_file() && f.location.commit_version() > Some(cp.version) {
+                Some(f.clone())
+            } else {
+                None
+            }
+        })
+        .collect_vec();
+
+    // NOTE: this will sort in reverse order
+    commit_files.sort_unstable_by(|a, b| b.location.cmp(&a.location));
+
+    let mut tgroup_uri: Option<String> = None;    
 
     let checkpoint_files = files
         .iter()

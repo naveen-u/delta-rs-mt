@@ -359,21 +359,29 @@ impl DeltaTableBuilder {
                 if let Ok(json_value) = serde_json::from_slice::<serde_json::Value>(line) {
                     if let Some(tgroup_obj) = json_value.get("tGroup") {
                         if let Some(uri) = tgroup_obj.get("tgroupUri").and_then(|v| v.as_str()) {
-                            let uri_str = format!("file://{}/", uri.trim_end_matches('/'));
-                            let tgroup_url = ensure_table_uri(&uri_str)?;
-                            let tgroup_logstore: Arc<dyn LogStore> = logstore_for(
-                                tgroup_url.clone(),
-                                StorageOptions::default(),
-                                None,
-                            )?;
-                            table.log_store = tgroup_logstore;
-                            table.has_tgroup = true;
-                            break; 
+                            if let Some(redirect_state) = tgroup_obj.get("redirectState").and_then(|v| v.as_str()) {
+                                table.redirect_state = Some(redirect_state.to_owned());
+                                let uri_str = format!("file://{}/", uri.trim_end_matches('/'));
+                                let tgroup_url = ensure_table_uri(&uri_str)?;
+                                let tgroup_logstore: Arc<dyn LogStore> = logstore_for(
+                                    tgroup_url.clone(),
+                                    StorageOptions::default(),
+                                    None,
+                                )?;
+                                
+                                table.table_log_store = Some(table.log_store);
+                                table.log_store = tgroup_logstore;
+                                table.has_tgroup = true;
+                            }
+                            
+                            
+                            break;
                         }
                     }
                 }
             }
         }
+        
     
         // Extract metadata id from the oldest (last) commit file
         let mut metadata_id: Option<String> = None;
