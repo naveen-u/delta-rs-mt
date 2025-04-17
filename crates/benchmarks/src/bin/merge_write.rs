@@ -619,7 +619,7 @@ async fn benchmark_write_tpcds_tgroup(
 
     let start = Instant::now();
     // Write the batch using WriteFlow (WriteBuilder).
-    let precommit = DeltaOps::try_from_uri(path.clone())
+    let precommit = DeltaOps::try_from_valid_uri(path.clone())
         .await?
         .write(vec![batch])
         .with_save_mode(SaveMode::Append)
@@ -659,7 +659,7 @@ async fn benchmark_write_tpcds_tgroup(
         ],
     )?;
 
-    DeltaOps::try_from_uri("data/benchmarks")
+    DeltaOps::try_from_valid_uri("data/benchmarks")
         .await?
         .write(vec![log_batch])
         .with_save_mode(SaveMode::Append)
@@ -773,7 +773,7 @@ async fn benchmark_write_tpcds_tgroup_mt(
         let handle = thread::spawn(|| {});
         handles.push(handle);
         // Write the batch using WriteFlow (WriteBuilder).
-        let precommit = DeltaOps::try_from_uri(table)
+        let precommit = DeltaOps::try_from_valid_uri(table)
             .await?
             .write(vec![batch.clone()])
             .with_save_mode(SaveMode::Append)
@@ -817,7 +817,7 @@ async fn benchmark_write_tpcds_tgroup_mt(
         ],
     )?;
 
-    DeltaOps::try_from_uri("data/benchmarks")
+    DeltaOps::try_from_valid_uri("data/benchmarks")
         .await?
         .write(vec![log_batch])
         .with_save_mode(SaveMode::Append)
