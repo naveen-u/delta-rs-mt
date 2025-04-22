@@ -3,7 +3,6 @@ use super::{DeltaOperation, ProtocolError};
 
 use crate::kernel::{Action, RedirectState, TGroup};
 use crate::operations::transaction::{CommitBuilder, FinalizedCommit};
-use crate::table::CheckPoint;
 use crate::{DeltaTable, DeltaTableError};
 
 /// Create initial log action to add a table to a T-group

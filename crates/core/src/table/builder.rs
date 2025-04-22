@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::kernel::snapshot::log_segment::list_log_files;
 use chrono::{DateTime, FixedOffset, Utc};
 use object_store::path::Path;
 use object_store::DynObjectStore;

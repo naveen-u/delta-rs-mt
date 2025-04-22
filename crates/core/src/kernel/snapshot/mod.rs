@@ -100,14 +100,9 @@ impl Snapshot {
         has_tgroup: bool,
         metadata_id: Option<String>,
     ) -> DeltaResult<Self> {
-        let log_segment = LogSegment::try_new_with_tgroup(
-            table_root,
-            version,
-            store.as_ref(),
-            has_tgroup,
-            metadata_id,
-        )
-        .await?;
+        let log_segment =
+            LogSegment::try_new_with_tgroup(table_root, version, store.as_ref(), metadata_id)
+                .await?;
         let (protocol, metadata) = log_segment.read_metadata(store.clone(), &config).await?;
         if !has_tgroup {
             if metadata.is_none() || protocol.is_none() {

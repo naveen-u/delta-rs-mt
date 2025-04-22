@@ -1516,7 +1516,7 @@ async fn execute(
     snapshot: DeltaTableState,
     _state: SessionState,
     writer_properties: Option<WriterProperties>,
-    mut commit_properties: CommitProperties,
+    commit_properties: CommitProperties,
     _safe_cast: bool,
     streaming: bool,
     source_alias: Option<String>,

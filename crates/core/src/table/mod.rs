@@ -5,7 +5,6 @@ use std::cmp::{min, Ordering};
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Formatter;
-use std::sync::Arc;
 
 use builder::ensure_table_uri;
 use chrono::{DateTime, Utc};

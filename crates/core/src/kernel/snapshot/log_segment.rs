@@ -4,7 +4,7 @@ use std::sync::{Arc, LazyLock};
 
 use arrow::compute::filter_record_batch;
 use arrow::compute::kernels::comparison::regexp_is_match_scalar;
-use arrow_array::{RecordBatch, StringArray, StructArray};
+use arrow_array::{RecordBatch, StringArray};
 use chrono::Utc;
 use futures::{stream::BoxStream, StreamExt, TryStreamExt};
 use itertools::Itertools;
@@ -17,19 +17,12 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 
-use object_store::memory::InMemory;
-
 use super::parse;
 use crate::kernel::arrow::extract;
 use crate::kernel::{arrow::json, ActionType, Metadata, Protocol, Schema, StructType};
 use crate::logstore::LogStore;
 use crate::operations::transaction::CommitData;
 use crate::{DeltaResult, DeltaTableConfig, DeltaTableError};
-
-use crate::logstore::logstore_for;
-use crate::storage::StorageOptions;
-use crate::table::builder::ensure_table_uri;
-use url::Url;
 
 const LAST_CHECKPOINT_FILE_NAME: &str = "_last_checkpoint";
 
@@ -155,7 +148,6 @@ impl LogSegment {
         table_root: &Path, // root directory of the Delta table (e.g. s3://bucket/path/to/table)
         version: Option<i64>, // optional — if provided, load that exact version
         store: &dyn ObjectStore, // backend file system abstraction (S3, local, etc.)
-        has_tgroup: bool,
         metadata_id: Option<String>,
     ) -> DeltaResult<Self> {
         let log_url = table_root.child("_delta_log"); // s3://bucket/path/to/table/_delta_log/
@@ -219,7 +211,7 @@ impl LogSegment {
         debug!("try_new_slice: start_version: {start_version}, end_version: {end_version:?}",);
         log_store.refresh().await?;
         let log_url = table_root.child("_delta_log");
-        let (mut commit_files, checkpoint_files, tgroup_uri) = list_log_files(
+        let (mut commit_files, checkpoint_files, _tgroup_uri) = list_log_files(
             log_store.object_store(None).as_ref(),
             &log_url,
             end_version,
@@ -514,14 +506,6 @@ struct CheckpointMetadata {
     pub(crate) checksum: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-struct TGroup {
-    #[serde(rename = "tgroupUri")]
-    pub tgroup_uri: String,
-    pub timestamp: Option<i64>,
-    pub redirectState: Option<String>,
-}
-
 /// Try reading the `_last_checkpoint` file.
 ///
 /// In case the file is not found, `None` is returned.
@@ -601,7 +585,7 @@ async fn list_log_files_with_checkpoint(
     // NOTE: this will sort in reverse order
     commit_files.sort_unstable_by(|a, b| b.location.cmp(&a.location));
 
-    let mut tgroup_uri: Option<String> = None;
+    let tgroup_uri: Option<String> = None;
 
     let checkpoint_files = files
         .iter()
@@ -811,15 +795,16 @@ pub(super) mod tests {
             .unwrap();
         assert_eq!(cp.version, 10);
 
-        let (log, check) = list_log_files_with_checkpoint(&cp, store.as_ref(), &log_path).await?;
+        let (log, check, _) =
+            list_log_files_with_checkpoint(&cp, store.as_ref(), &log_path).await?;
         assert_eq!(log.len(), 0);
         assert_eq!(check.len(), 1);
 
-        let (log, check) = list_log_files(store.as_ref(), &log_path, None, None).await?;
+        let (log, check, _) = list_log_files(store.as_ref(), &log_path, None, None).await?;
         assert_eq!(log.len(), 0);
         assert_eq!(check.len(), 1);
 
-        let (log, check) = list_log_files(store.as_ref(), &log_path, Some(8), None).await?;
+        let (log, check, _) = list_log_files(store.as_ref(), &log_path, Some(8), None).await?;
         assert_eq!(log.len(), 9);
         assert_eq!(check.len(), 0);
 
@@ -838,11 +823,11 @@ pub(super) mod tests {
             .build_storage()?
             .object_store(None);
 
-        let (log, check) = list_log_files(store.as_ref(), &log_path, None, None).await?;
+        let (log, check, _) = list_log_files(store.as_ref(), &log_path, None, None).await?;
         assert_eq!(log.len(), 5);
         assert_eq!(check.len(), 0);
 
-        let (log, check) = list_log_files(store.as_ref(), &log_path, Some(2), None).await?;
+        let (log, check, _) = list_log_files(store.as_ref(), &log_path, Some(2), None).await?;
         assert_eq!(log.len(), 3);
         assert_eq!(check.len(), 0);
 
@@ -865,6 +850,7 @@ pub(super) mod tests {
             min_writer_version: 7,
             reader_features: Some(hashset! {ReaderFeatures::DeletionVectors}),
             writer_features: Some(hashset! {WriterFeatures::DeletionVectors}),
+            table_id: None,
         };
         assert_eq!(protocol, expected);
 
