@@ -223,7 +223,11 @@ impl DeltaOps {
     #[cfg(feature = "datafusion")]
     #[must_use]
     pub fn write(self, batches: impl IntoIterator<Item = RecordBatch>) -> WriteBuilder {
-        WriteBuilder::new(self.0.log_store, self.0.state).with_input_batches(batches)
+        let wb = WriteBuilder::new(self.0.log_store, self.0.state).with_input_batches(batches);
+        match self.0.table_log_store {
+            Some(ls) => wb.with_data_store(ls),
+            None => wb,
+        }
     }
 
     #[cfg(feature = "datafusion")]

@@ -2,9 +2,9 @@ use std::cmp::Ordering;
 use std::collections::VecDeque;
 use std::sync::{Arc, LazyLock};
 
-use arrow::compute::filter_record_batch;
 use arrow::compute::kernels::comparison::regexp_is_match_scalar;
-use arrow_array::{RecordBatch, StringArray};
+use arrow::compute::{filter_record_batch, is_null, or};
+use arrow_array::{RecordBatch, StringArray, StructArray};
 use chrono::Utc;
 use futures::{stream::BoxStream, StreamExt, TryStreamExt};
 use itertools::Itertools;
@@ -314,11 +314,48 @@ impl LogSegment {
             result.map(|rb| {
                 match &table_id {
                     Some(id) => {
-                        if rb.column_by_name("table_id").is_some() {
-                            let table_id_col =
-                                extract::extract_and_cast::<StringArray>(&rb, "table_id").unwrap();
-                            let filter = regexp_is_match_scalar(table_id_col, id, None).unwrap();
-                            filter_record_batch(&rb, &filter).unwrap()
+                        // We only filter add actions for now. Ideally, we should be filtering all.
+                        if rb.column_by_name("add").is_some() {
+                            let add_col = rb
+                                .column_by_name("add")
+                                .ok_or_else(|| {
+                                    arrow::error::ArrowError::ComputeError(
+                                        "Missing 'add' column".to_string(),
+                                    )
+                                })
+                                .unwrap();
+                            let add_struct = add_col
+                                .as_any()
+                                .downcast_ref::<StructArray>()
+                                .ok_or_else(|| {
+                                    arrow::error::ArrowError::ComputeError(
+                                        "'add' is not a StructArray".to_string(),
+                                    )
+                                })
+                                .unwrap();
+                            let table_id_array = add_struct
+                                .column_by_name("tableId")
+                                .ok_or_else(|| {
+                                    arrow::error::ArrowError::ComputeError(
+                                        "Missing 'tableId' in 'add'".to_string(),
+                                    )
+                                })
+                                .unwrap();
+                            let table_id_utf8 = table_id_array
+                                .as_any()
+                                .downcast_ref::<StringArray>()
+                                .ok_or_else(|| {
+                                    arrow::error::ArrowError::ComputeError(
+                                        "'tableId' is not a Utf8/StringArray".to_string(),
+                                    )
+                                })
+                                .unwrap();
+                            // 4. Compute the predicate: tableId != tid && tableId is not null
+                            let null_mask = is_null(table_id_utf8).unwrap();
+                            let equal_mask =
+                                regexp_is_match_scalar(table_id_utf8, id, None).unwrap();
+                            let combined_mask = or(&null_mask, &equal_mask).unwrap();
+                            filter_record_batch(&rb, &combined_mask).unwrap()
                         } else {
                             rb
                         }

@@ -766,20 +766,6 @@ impl ExtensionPlanner for MergeMetricExtensionPlanner {
     }
 }
 
-fn update_action_with_table_id(action: &mut Action, table_uuid: String) {
-    match action {
-        Action::Metadata(meta) => meta.table_id = Some(table_uuid),
-        Action::Txn(txn) => txn.table_id = Some(table_uuid),
-        Action::CommitInfo(ci) => ci.table_id = Some(table_uuid),
-        Action::Remove(rem) => rem.table_id = Some(table_uuid),
-        Action::Add(add) => add.table_id = Some(table_uuid),
-        Action::Protocol(proto) => proto.table_id = Some(table_uuid),
-        // For all other Action variants that do not have a table_id field,
-        // simply clone the action.
-        _ => {}
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
 async fn execute_precommit<'a>(
     predicate: Expression,
@@ -1502,8 +1488,8 @@ async fn execute_precommit<'a>(
         .with_post_commit_hook_handler(handle.cloned())
         .build(Some(snapshot), log_store.clone(), operation);
 
-    for mut action in precommit.data_mut().actions.iter_mut() {
-        update_action_with_table_id(&mut action, String::from(&snapshot.metadata().id));
+    for action in precommit.data_mut().actions.iter_mut() {
+        action.update_action_with_table_id(String::from(&snapshot.metadata().id));
     }
 
     Ok((precommit, metrics))

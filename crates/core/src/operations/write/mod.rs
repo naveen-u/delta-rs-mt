@@ -170,6 +170,7 @@ pub struct WriteBuilder {
     /// Configurations of the delta table, only used when table doesn't exist
     configuration: HashMap<String, Option<String>>,
     custom_execute_handler: Option<Arc<dyn CustomExecuteHandler>>,
+    data_store: Option<LogStoreRef>,
 }
 
 #[derive(Default, Debug, Serialize, Deserialize)]
@@ -217,6 +218,7 @@ impl WriteBuilder {
             description: None,
             configuration: Default::default(),
             custom_execute_handler: None,
+            data_store: None,
         }
     }
 
@@ -332,6 +334,11 @@ impl WriteBuilder {
             let df = ctx.read_table(table_provider).unwrap();
             self.input = Some(Arc::new(df.logical_plan().clone()));
         }
+        self
+    }
+
+    pub fn with_data_store(mut self, data_store: LogStoreRef) -> Self {
+        self.data_store = Some(data_store);
         self
     }
 
@@ -664,7 +671,10 @@ impl WriteBuilder {
             state.clone(),
             source_plan.clone(),
             partition_columns.clone(),
-            self.log_store.object_store(Some(operation_id)).clone(),
+            match self.data_store {
+                Some(ls) => ls.object_store(Some(operation_id)).clone(),
+                None => self.log_store.object_store(Some(operation_id)).clone(),
+            },
             target_file_size,
             self.write_batch_size,
             self.writer_properties,
@@ -712,6 +722,15 @@ impl WriteBuilder {
                 // Dereference the Arc to get a &'static dyn TableReference.
                 &**leaked
             });
+
+        match &table_data {
+            Some(td) => {
+                for action in &mut actions {
+                    action.update_action_with_table_id(String::from(td.metadata().id.clone()));
+                }
+            }
+            None => {}
+        }
 
         // Build the commit builder.
         let precommit = CommitBuilder::from(commit_properties)

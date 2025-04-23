@@ -70,6 +70,7 @@ mod tests {
             deletion_vector: None,
             stats_parsed: None,
             clustering_provider: None,
+            table_id: None,
         };
 
         let meta: ObjectMeta = (&add).try_into().unwrap();

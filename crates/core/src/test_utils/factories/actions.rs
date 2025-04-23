@@ -35,6 +35,7 @@ impl ActionFactory {
             base_row_id: None,
             clustering_provider: None,
             stats_parsed: None,
+            table_id: None,
         }
     }
 
@@ -109,6 +110,7 @@ impl ActionFactory {
             min_writer_version: max_writer.unwrap_or(PROTOCOL.default_writer_version()),
             writer_features: writer_features.map(|i| i.into_iter().collect()),
             reader_features: reader_features.map(|i| i.into_iter().collect()),
+            table_id: None,
         }
     }
 
@@ -128,6 +130,7 @@ impl ActionFactory {
             name: None,
             description: None,
             created_time: Some(Utc::now().timestamp_millis()),
+            table_id: None,
         }
     }
 }
@@ -144,6 +147,7 @@ pub fn add_as_remove(add: &Add, data_change: bool) -> Remove {
         deletion_vector: add.deletion_vector.clone(),
         base_row_id: add.base_row_id,
         default_row_commit_version: add.default_row_commit_version,
+        table_id: None,
     }
 }
 

@@ -320,10 +320,11 @@ impl Snapshot {
         &self,
         store: Arc<dyn ObjectStore>,
     ) -> DeltaResult<BoxStream<'_, DeltaResult<Vec<Remove>>>> {
-        let log_stream = self.log_segment.commit_stream(
+        let log_stream = self.log_segment.commit_stream_with_tableid(
             store.clone(),
             &log_segment::TOMBSTONE_SCHEMA,
             &self.config,
+            Some(self.metadata().id.clone()),
         )?;
         let checkpoint_stream =
             self.log_segment
@@ -538,10 +539,11 @@ impl EagerSnapshot {
 
         schema_actions.insert(ActionType::Remove);
         let read_schema = StructType::new(schema_actions.iter().map(|a| a.schema_field().clone()));
-        let log_stream = new_slice.commit_stream(
+        let log_stream = new_slice.commit_stream_with_tableid(
             log_store.object_store(None).clone(),
             &read_schema,
             &self.snapshot.config,
+            Some(self.metadata().id.clone()),
         )?;
 
         let mapper = LogMapper::try_new(&self.snapshot, None)?;

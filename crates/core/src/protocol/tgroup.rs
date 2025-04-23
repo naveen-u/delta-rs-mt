@@ -2,7 +2,7 @@ use super::checkpoints::create_checkpoint_for_tgroup_add;
 use super::{DeltaOperation, ProtocolError};
 
 use crate::kernel::{Action, RedirectState, TGroup};
-use crate::operations::transaction::{CommitBuilder, FinalizedCommit};
+use crate::operations::transaction::{CommitBuilder, FinalizedCommit, PreCommit};
 use crate::{DeltaTable, DeltaTableError};
 
 /// Create initial log action to add a table to a T-group
@@ -81,4 +81,24 @@ pub async fn finalize_add_to_tgroup(
             operation,
         )
         .await;
+}
+
+pub async fn commit_tgroup_transaction<'a>(
+    precommits: Vec<PreCommit<'a>>,
+) -> Result<FinalizedCommit, DeltaTableError> {
+    let mut combined_actions: Vec<Action> = Vec::new();
+
+    // Process every provided precommit.
+    for precommit in precommits.iter() {
+        for action in precommit.data().actions.iter() {
+            combined_actions.push(action.clone());
+        }
+    }
+
+    let mut combined_precommit = precommits
+        .into_iter()
+        .next()
+        .expect("No precommits provided");
+    combined_precommit.data_mut().actions = combined_actions;
+    combined_precommit.await
 }
