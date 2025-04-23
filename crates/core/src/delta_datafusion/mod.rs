@@ -290,7 +290,6 @@ impl DeltaTableState {
 pub(crate) fn register_store(store: LogStoreRef, env: Arc<RuntimeEnv>) {
     let object_store_url = store.object_store_url();
     let url: &Url = object_store_url.as_ref();
-    println!("Object store URL: {}", object_store_url);
     env.register_object_store(url, store.object_store(None));
 }
 
