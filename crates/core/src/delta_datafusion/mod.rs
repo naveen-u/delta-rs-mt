@@ -290,6 +290,7 @@ impl DeltaTableState {
 pub(crate) fn register_store(store: LogStoreRef, env: Arc<RuntimeEnv>) {
     let object_store_url = store.object_store_url();
     let url: &Url = object_store_url.as_ref();
+    println!("Object store URL: {}", object_store_url);
     env.register_object_store(url, store.object_store(None));
 }
 
@@ -726,10 +727,14 @@ impl TableProvider for DeltaTable {
         filters: &[Expr],
         limit: Option<usize>,
     ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
-        register_store(self.log_store(), session.runtime_env().clone());
+        let scan_ls = self
+            .table_log_store
+            .clone()
+            .unwrap_or(self.log_store.clone());
+        register_store(scan_ls.clone(), session.runtime_env().clone());
         let filter_expr = conjunction(filters.iter().cloned());
 
-        let scan = DeltaScanBuilder::new(self.snapshot()?, self.log_store(), session)
+        let scan = DeltaScanBuilder::new(self.snapshot()?, scan_ls.clone(), session)
             .with_projection(projection)
             .with_limit(limit)
             .with_filter(filter_expr)
@@ -2070,6 +2075,7 @@ mod tests {
             base_row_id: None,
             default_row_commit_version: None,
             clustering_provider: None,
+            table_id: None,
         };
         let schema = ArrowSchema::new(vec![
             Field::new("year", ArrowDataType::Int64, true),

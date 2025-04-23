@@ -370,7 +370,8 @@ impl DeltaTableBuilder {
                                 )?;
 
                                 table.table_log_store = Some(table.log_store);
-                                table.log_store = tgroup_logstore;
+                                table.log_store = tgroup_logstore.clone();
+                                table.tgroup_log_store = Some(tgroup_logstore);
                                 table.has_tgroup = true;
                             }
 

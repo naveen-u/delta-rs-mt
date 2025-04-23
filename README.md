@@ -129,7 +129,8 @@ cargo run --release --bin merge_write -- add-to-tgroup $TPCDS_TABLE_PATH $TGROUP
 ### 3.2 Read Benchmarks
 
 ```bash
-  cargo run --release --bin merge_write -- read-perf ./tpcds-delta/web_returns
+# Replace $TPCDS_TABLE_PATH with any delta table's path
+cargo run --release --bin merge_write -- read-perf $TPCDS_TABLE_PATH
 ```
 
 ### 3.3 Write Benchmark
