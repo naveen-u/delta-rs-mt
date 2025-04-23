@@ -136,4 +136,19 @@ impl Action {
             Self::TGroup(_) => ActionType::TGroup,
         }
     }
+
+    pub fn update_action_with_table_id(&mut self, table_uuid: String) -> &mut Self {
+        match self {
+            Action::Metadata(meta) => meta.table_id = Some(table_uuid),
+            Action::Txn(txn) => txn.table_id = Some(table_uuid),
+            Action::CommitInfo(ci) => ci.table_id = Some(table_uuid),
+            Action::Remove(rem) => rem.table_id = Some(table_uuid),
+            Action::Add(add) => add.table_id = Some(table_uuid),
+            Action::Protocol(proto) => proto.table_id = Some(table_uuid),
+            // For all other Action variants that do not have a table_id field,
+            // simply clone the action.
+            _ => {}
+        };
+        self
+    }
 }

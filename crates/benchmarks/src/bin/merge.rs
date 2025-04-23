@@ -407,9 +407,7 @@ async fn tgroup_commit(pre_commits: Vec<PreCommit<'static>>) -> core::time::Dura
         .expect("No precommits provided");
     combined_precommit.data_mut().actions = combined_actions;
 
-    combined_precommit.await;
-    // println!("Final commit version: {}", final_commit.snapshot.version());
-
+    combined_precommit.await.unwrap();
     return Instant::now().duration_since(start);
 }
 
