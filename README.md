@@ -156,11 +156,14 @@ For Delta-RS (non TGroups)
 cargo run --release --bin merge_write -- write-multi-table <num_rows>
 ```
 
-### 3.4 Multi-Table T-Group Write Example
+## Source Code Explanation
+
+
+### 1. Multi-Table T-Group Write Example
 
 This example shows how to perform an atomic, multi-table write (T-Group) in Rust using `delta-rs-mt`.
 
-#### 3.4.1 Example Code
+#### 1.1 Example Code
 1. **Open your table** (must have a checkpoint):
    ```rust
    let table = deltalake::open_table("s3://my-bucket/my_table").await?;
@@ -174,7 +177,7 @@ This example shows how to perform an atomic, multi-table write (T-Group) in Rust
    DeltaOps(table).write(vec![batch]).await?;
    ```
 
-#### 4.2 Multi-Table T-Group Write
+#### 1.2 Multi-Table T-Group Write
 
 1. **Open each table** in your transaction group:
    ```rust
@@ -199,11 +202,9 @@ This example shows how to perform an atomic, multi-table write (T-Group) in Rust
    ```
 
 
-## Source Code Explanation
+### 2. Benchmarks
 
-### Benchmarks
-
-#### 1. Read‐Only Benchmark
+#### 2.1 Read‐Only Benchmark
 
 - **`async fn benchmark_read_tpcds`**  
   - **CLI**: `ReadPerf <path>`  
@@ -213,26 +214,25 @@ This example shows how to perform an atomic, multi-table write (T-Group) in Rust
       path: String
     ) -> Result<(Duration,ReadMetrics),DataFusionError>
     ```  
-  - **Location**: `crates/benchmarks/src/bin/merge_write.rs`, lines **393–451**
+  - **Location**: `crates/benchmarks/src/bin/merge_write.rs`, lines **393–450**
 
-  Although your focus was on writes, we also include ReadPerf (triggered via the ReadPerf CLI). Defined around line 350, it loads the Delta table, runs SELECT * FROM t1, collects all batches, sums row counts, and times the full scan+deserialize pipeline. Metrics are logged the same way into “data/benchmarks.”
+   This loads the Delta table, runs SELECT * FROM t1, collects all batches, sums row counts, and times the full scan+ deserialize pipeline.
 
 ---
 
-#### 2.Write‐Only Benchmarks
+#### 2.2 Write‐Only Benchmarks
 
 - **`async fn benchmark_write_tpcds`**  
-  - **CLI**: `WritePerf <path> <num_rows>`  
   - **Signature**:  
     ```rust
     async fn benchmark_write_tpcds(
       path: String,
       num_rows: usize
-    ) -> Result<(Duration,WriteMetrics),DataFusionError>
+    ) -> Result<(core::time::Duration, WriteMetrics),DataFusionError>
     ```  
-  - **Location**: `crates/benchmarks/src/bin/merge_write.rs`, lines **360–410**
+  - **Location**: `crates/benchmarks/src/bin/merge_write.rs`, lines **533–597**
 
-  Invoked via the WritePerf CLI command, this async function lives starting around line 400 in src/main.rs. It loads the existing Delta table schema with DeltaTableBuilder::from_uri(..).load(), synthesizes a dummy RecordBatch of num_rows via create_dummy_record_batch(), appends it via DeltaOps::write(..), and measures total elapsed time with tokio::time::Instant. Results (row count + duration) are then appended into the “data/benchmarks” Delta table for later analysis.
+  This function loads the existing Delta table schema with DeltaTableBuilder::from_uri(..).load(), synthesizes a dummy RecordBatch of num_rows via create_dummy_record_batch(), appends it via DeltaOps::write(..), and measures total elapsed time with tokio::time::Instant.
 
 - **`async fn benchmark_write_tpcds_tgroup`**  
   - **CLI**: `WriteTGroup <path> <num_rows>`  
@@ -243,9 +243,9 @@ This example shows how to perform an atomic, multi-table write (T-Group) in Rust
       num_rows: usize
     ) -> Result<(Duration,WriteMetrics),DataFusionError>
     ```  
-  - **Location**: `crates/benchmarks/src/bin/merge_write.rs`, lines **598–664**
+  - **Location**: `crates/benchmarks/src/bin/merge_write.rs`, lines **598–663**
 
-  Accessible via the WriteTGroup CLI subcommand (alias of WritePerf), this variant appears just below benchmark_write_tpcds. Instead of a fire-and-forget write, it calls .get_precommit().await on the WriteBuilder, measures only the commit phase of the single-table transaction group, and then logs duration/metrics identically to WritePerf.
+  Instead of a fire-and-forget write, it calls .get_precommit().await on the WriteBuilder, measures only the commit phase of the single-table transaction group, and then logs duration/metrics identically to WritePerf.
 
 - **`async fn benchmark_write_tpcds_mt`**  
   - **CLI**: `WriteMultiTable <num_rows>`  
@@ -256,9 +256,9 @@ This example shows how to perform an atomic, multi-table write (T-Group) in Rust
       num_rows: usize
     ) -> Result<(Duration,WriteMetrics),DataFusionError>
     ```  
-  - **Location**: `crates/benchmarks/src/bin/merge_write.rs`, lines **460–520**
+  - **Location**: `crates/benchmarks/src/bin/merge_write.rs`, lines **665–741**
 
-  Mapped to the WriteMultiTable subcommand (around line 480), this routine accepts a list of independent table paths. It spawns one thread per table, each generating its own dummy batch and calling DeltaOps::write(..). The wall-clock time from before the first write to after all threads join captures parallel write throughput across multiple tables not in a transaction group.
+  This routine accepts a list of independent table paths. It spawns one thread per table, each generating its own dummy batch and calling DeltaOps::write(..). The wall-clock time from before the first write to after all threads join captures parallel write throughput across multiple tables not in a transaction group.
 
 - **`async fn benchmark_write_tpcds_tgroup_mt`**  
   - **CLI**: `WriteMultiTableTGroup <num_rows>`  
@@ -269,6 +269,6 @@ This example shows how to perform an atomic, multi-table write (T-Group) in Rust
       num_rows: usize
     ) -> Result<(Duration,WriteMetrics),DataFusionError>
     ```  
-  - **Location**: `crates/benchmarks/src/bin/merge_write.rs`, lines **520–580**
+  - **Location**: `crates/benchmarks/src/bin/merge_write.rs`, lines **743–821**
 
-  Invoked by the WriteMultiTableTGroup command immediately after WriteMultiTable, this function groups multiple tables into the same T-Group. Each thread issues a write(..).get_precommit().await, so you isolate the cost of coordinating a multi-table commit. It lives directly below benchmark_write_tpcds_mt in src/main.rs.
+  This function groups multiple tables into the same T-Group. Each thread issues a write(..).get_precommit().await, so we isolate the cost of coordinating a multi-table commit.
