@@ -162,13 +162,10 @@ cargo run --release --bin merge_write -- write-multi-table <num_rows>
 ### 1. T-Group Addition
 
 To enable grouping multiple Delta tables under a single transaction group (T-Group), we added a new protocol module and extended the high-level API.
----
 
 #### 1. Protocol handlers
 
 **File:** `core/src/protocol/tgroup.rs`
-
-- \`\`
 
   ```rust
   pub async fn initiate_add_to_tgroup(
@@ -178,8 +175,6 @@ To enable grouping multiple Delta tables under a single transaction group (T-Gro
   ```
   Creates the initial *TGroupStart* commit record (read-only) by emitting an `Action::TGroup(ReadOnly)` to the table’s log.
 
-- \`\`
-
   ```rust
   pub async fn create_initial_tgroup_checkpoint(
       table: &DeltaTable,
@@ -188,8 +183,6 @@ To enable grouping multiple Delta tables under a single transaction group (T-Gro
   ```
 
   Forces a checkpoint on the table (via `create_checkpoint_for_tgroup_add`) so that the T-Group has a stable snapshot to redirect to.
-
-- \`\`
 
   ```rust
   pub async fn finalize_add_to_tgroup(
