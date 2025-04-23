@@ -198,9 +198,6 @@ This example shows how to perform an atomic, multi-table write (T-Group) in Rust
    let result = merged.await?;
    ```
 
-> **Tip:**  
-> By batching multiple `PreCommit` objects—each tagged with its own `table_id`—you get a single JSON entry in `_delta_log/` that atomically updates all tables in the group, reusing Delta Lake’s OCC and atomic-append guarantees.
-
 
 ## Source Code Explanation
 
