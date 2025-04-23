@@ -112,7 +112,6 @@ pub use protocol::tgroup;
 ///
 /// Will fail fast if specified `table_uri` is a local path but doesn't exist.
 pub async fn open_table(table_uri: impl AsRef<str>) -> Result<DeltaTable, DeltaTableError> {
-    println!("{}", table_uri.as_ref());
     let table = DeltaTableBuilder::from_valid_uri(table_uri)?.load().await?;
     Ok(table)
 }

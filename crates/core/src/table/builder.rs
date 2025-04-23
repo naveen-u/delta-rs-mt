@@ -328,7 +328,6 @@ impl DeltaTableBuilder {
     /// Build the [`DeltaTable`] and load its state
     pub async fn load(&mut self) -> DeltaResult<DeltaTable> {
         let version = self.version;
-        println!("{}", self.table_uri);
         let mut builder = self.clone();
         builder.table_uri_orig = Some(builder.table_uri.clone());
 
@@ -404,7 +403,7 @@ impl DeltaTableBuilder {
         }
 
         if let Some(ref id) = metadata_id {
-            println!("Extracted metadata id: {}", id);
+            debug!("Extracted metadata id: {}", id);
             table.metadata_id = Some(id.to_string());
         }
 

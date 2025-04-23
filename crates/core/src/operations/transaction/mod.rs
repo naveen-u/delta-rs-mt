@@ -599,23 +599,6 @@ impl<'a> PreCommit<'a> {
                 .await?
             };
 
-            match &commit_or_bytes {
-                CommitOrBytes::LogBytes(bytes) => {
-                    println!("[Debug] LogBytes length: {}", bytes.len());
-                    if let Ok(s) = std::str::from_utf8(bytes) {
-                        println!("[Debug] LogBytes (utf-8): {}", s);
-                    } else {
-                        println!(
-                            "[Debug] LogBytes not valid UTF-8, hex preview: {:02x?}",
-                            &bytes[..std::cmp::min(32, bytes.len())]
-                        );
-                    }
-                }
-                CommitOrBytes::TmpCommit(path) => {
-                    println!("[Debug] TmpCommit path: {}", path);
-                }
-            }
-
             Ok(PreparedCommit {
                 commit_or_bytes,
                 log_store: this.log_store,

@@ -742,9 +742,9 @@ impl std::future::IntoFuture for WriteBuilder {
             // Call the helper subroutine and obtain the precommit future and operation ID.
             let precommit = WriteBuilder::prepare_precommit(self).await?;
 
-            println!("Done with precommit?");
+            debug!("Done with precommit?");
             for action in precommit.data().actions.iter() {
-                println!("{:?}", action);
+                debug!("{:?}", action);
             }
 
             let opid = *precommit.opid();
@@ -765,16 +765,6 @@ impl WriteBuilder {
     pub async fn get_precommit(self) -> DeltaResult<PreCommit<'static>> {
         // Call the helper subroutine to prepare the precommit.
         let precommit = WriteBuilder::prepare_precommit(self).await?;
-
-        // Optionally, print the actions for debugging.
-        println!("Done with precommit?");
-        // for action in precommit.data().actions.iter() {
-        //     println!("{:?}", action);
-        // }
-
-        // let boxed = Box::new(precommit);
-        // Ok(Box::leak(boxed))
-
         Ok(precommit)
     }
 }
