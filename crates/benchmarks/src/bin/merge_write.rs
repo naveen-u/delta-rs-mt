@@ -1,4 +1,6 @@
 use std::{
+    fs,
+    path::Path as FsPath,
     sync::Arc,
     thread,
     time::{SystemTime, UNIX_EPOCH},
@@ -26,12 +28,10 @@ use deltalake_core::{
 };
 use deltalake_core::{checkpoints::create_checkpoint, protocol::SaveMode};
 
-use arrow::array::{Decimal128Builder, Int32Array, Int64Array};
+use arrow::array::{Int32Array, Int64Array};
 use std::error::Error;
 
 use arrow_array::Decimal128Array;
-use arrow_buffer::Buffer;
-use datafusion_proto::protobuf::Decimal128;
 
 use serde_json::json;
 use tokio::time::Instant;
@@ -501,15 +501,9 @@ fn dummy_array_for_field(
         //     Ok(Arc::new(builder.finish()))
         // }
         DataType::Decimal128(precision, scale) => {
-            // Instead of building actual decimal values, create an array of nulls.
-            // This array will have the correct type (e.g. Decimal128(7,2)) but no valid values.
-
-            //    Ok(Arc::new(Decimal128Array::from_iter_values([1,2,3,4,5,6,7,8,9,10])
-            //    .with_precision_and_scale(7, 2)
-            //    .unwrap()))
-            let values = (1..=num_rows as i128); // inclusive range 1..=num_rows
+            let values = 1..=num_rows as i128; // inclusive range 1..=num_rows
             let array = Decimal128Array::from_iter_values(values)
-                .with_precision_and_scale(7, 2)
+                .with_precision_and_scale(*precision, *scale)
                 .unwrap();
             Ok(Arc::new(array))
         }
@@ -841,8 +835,9 @@ enum Command {
     WriteTGroup(WritePerf),
     WriteMultiTable(WriteMultiTable),
     WriteMultiTableTGroup(WriteMultiTable),
-    AddToTGroup(AddTGroup),
+    AddToTgroup(AddTGroup),
     Checkpoint(Checkpoint),
+    CreateTgroup(NewTGroup),
 }
 
 #[derive(Debug, Args)]
@@ -893,6 +888,11 @@ struct AddTGroup {
 #[derive(Debug, Args)]
 struct Checkpoint {
     table: String,
+}
+
+#[derive(Debug, Args)]
+struct NewTGroup {
+    tgroup_path: String,
 }
 
 #[derive(Debug, Args)]
@@ -1306,13 +1306,19 @@ async fn main() {
             let (duration, metrics) = benchmark_write_tpcds_mt(tables, num_rows).await.unwrap();
             println!("Write Metrics: {:?}\nTime: {:.2?}", metrics, duration);
         }
-        Command::AddToTGroup(AddTGroup { table, tgroup }) => {
+        Command::AddToTgroup(AddTGroup { table, tgroup }) => {
             let mut table = DeltaTableBuilder::from_uri(table).load().await.unwrap();
             table.add_to_tgroup(&tgroup).await.unwrap();
         }
         Command::Checkpoint(Checkpoint { table }) => {
             let table = DeltaTableBuilder::from_uri(table).load().await.unwrap();
             create_checkpoint(&table, None).await.unwrap();
+        }
+        Command::CreateTgroup(NewTGroup { tgroup_path }) => {
+            let dir_path = FsPath::new(&tgroup_path).join("_delta_log");
+            fs::create_dir_all(&dir_path).unwrap();
+            fs::File::create(dir_path.join("00000000000000000000.json")).unwrap();
+            println!("TGroup created successfully at {tgroup_path}");
         }
     }
 }
