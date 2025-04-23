@@ -155,3 +155,78 @@ For Delta-RS (non TGroups)
 ```bash
 cargo run --release --bin merge_write -- write-multi-table <num_rows>
 ```
+
+
+## Source Code Explanation
+
+### Benchmarks
+
+#### 1. Read‐Only Benchmark
+
+- **`async fn benchmark_read_tpcds`**  
+  - **CLI**: `ReadPerf <path>`  
+  - **Signature**:  
+    ```rust
+    async fn benchmark_read_tpcds(
+      path: String
+    ) -> Result<(Duration,ReadMetrics),DataFusionError>
+    ```  
+  - **Location**: `crates/benchmarks/src/bin/merge_write.rs`, lines **393–451**
+
+  Although your focus was on writes, we also include ReadPerf (triggered via the ReadPerf CLI). Defined around line 350, it loads the Delta table, runs SELECT * FROM t1, collects all batches, sums row counts, and times the full scan+deserialize pipeline. Metrics are logged the same way into “data/benchmarks.”
+
+---
+
+#### 2.Write‐Only Benchmarks
+
+- **`async fn benchmark_write_tpcds`**  
+  - **CLI**: `WritePerf <path> <num_rows>`  
+  - **Signature**:  
+    ```rust
+    async fn benchmark_write_tpcds(
+      path: String,
+      num_rows: usize
+    ) -> Result<(Duration,WriteMetrics),DataFusionError>
+    ```  
+  - **Location**: `crates/benchmarks/src/bin/merge_write.rs`, lines **360–410**
+
+  Invoked via the WritePerf CLI command, this async function lives starting around line 400 in src/main.rs. It loads the existing Delta table schema with DeltaTableBuilder::from_uri(..).load(), synthesizes a dummy RecordBatch of num_rows via create_dummy_record_batch(), appends it via DeltaOps::write(..), and measures total elapsed time with tokio::time::Instant. Results (row count + duration) are then appended into the “data/benchmarks” Delta table for later analysis.
+
+- **`async fn benchmark_write_tpcds_tgroup`**  
+  - **CLI**: `WriteTGroup <path> <num_rows>`  
+  - **Signature**:  
+    ```rust
+    async fn benchmark_write_tpcds_tgroup(
+      path: String,
+      num_rows: usize
+    ) -> Result<(Duration,WriteMetrics),DataFusionError>
+    ```  
+  - **Location**: `crates/benchmarks/src/bin/merge_write.rs`, lines **598–664**
+
+  Accessible via the WriteTGroup CLI subcommand (alias of WritePerf), this variant appears just below benchmark_write_tpcds. Instead of a fire-and-forget write, it calls .get_precommit().await on the WriteBuilder, measures only the commit phase of the single-table transaction group, and then logs duration/metrics identically to WritePerf.
+
+- **`async fn benchmark_write_tpcds_mt`**  
+  - **CLI**: `WriteMultiTable <num_rows>`  
+  - **Signature**:  
+    ```rust
+    async fn benchmark_write_tpcds_mt(
+      table_paths: Vec<&str>,
+      num_rows: usize
+    ) -> Result<(Duration,WriteMetrics),DataFusionError>
+    ```  
+  - **Location**: `crates/benchmarks/src/bin/merge_write.rs`, lines **460–520**
+
+  Mapped to the WriteMultiTable subcommand (around line 480), this routine accepts a list of independent table paths. It spawns one thread per table, each generating its own dummy batch and calling DeltaOps::write(..). The wall-clock time from before the first write to after all threads join captures parallel write throughput across multiple tables not in a transaction group.
+
+- **`async fn benchmark_write_tpcds_tgroup_mt`**  
+  - **CLI**: `WriteMultiTableTGroup <num_rows>`  
+  - **Signature**:  
+    ```rust
+    async fn benchmark_write_tpcds_tgroup_mt(
+      table_paths: Vec<&str>,
+      num_rows: usize
+    ) -> Result<(Duration,WriteMetrics),DataFusionError>
+    ```  
+  - **Location**: `crates/benchmarks/src/bin/merge_write.rs`, lines **520–580**
+
+  Invoked by the WriteMultiTableTGroup command immediately after WriteMultiTable, this function groups multiple tables into the same T-Group. Each thread issues a write(..).get_precommit().await, so you isolate the cost of coordinating a multi-table commit. It lives directly below benchmark_write_tpcds_mt in src/main.rs.
