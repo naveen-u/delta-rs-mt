@@ -207,7 +207,6 @@ This example shows how to perform an atomic, multi-table write (T-Group) in Rust
 #### 2.1 Read‐Only Benchmark
 
 - **`async fn benchmark_read_tpcds`**  
-  - **CLI**: `ReadPerf <path>`  
   - **Signature**:  
     ```rust
     async fn benchmark_read_tpcds(
@@ -235,7 +234,6 @@ This example shows how to perform an atomic, multi-table write (T-Group) in Rust
   This function loads the existing Delta table schema with DeltaTableBuilder::from_uri(..).load(), synthesizes a dummy RecordBatch of num_rows via create_dummy_record_batch(), appends it via DeltaOps::write(..), and measures total elapsed time with tokio::time::Instant.
 
 - **`async fn benchmark_write_tpcds_tgroup`**  
-  - **CLI**: `WriteTGroup <path> <num_rows>`  
   - **Signature**:  
     ```rust
     async fn benchmark_write_tpcds_tgroup(
@@ -248,7 +246,6 @@ This example shows how to perform an atomic, multi-table write (T-Group) in Rust
   Instead of a fire-and-forget write, it calls .get_precommit().await on the WriteBuilder, measures only the commit phase of the single-table transaction group, and then logs duration/metrics identically to WritePerf.
 
 - **`async fn benchmark_write_tpcds_mt`**  
-  - **CLI**: `WriteMultiTable <num_rows>`  
   - **Signature**:  
     ```rust
     async fn benchmark_write_tpcds_mt(
@@ -261,7 +258,6 @@ This example shows how to perform an atomic, multi-table write (T-Group) in Rust
   This routine accepts a list of independent table paths. It spawns one thread per table, each generating its own dummy batch and calling DeltaOps::write(..). The wall-clock time from before the first write to after all threads join captures parallel write throughput across multiple tables not in a transaction group.
 
 - **`async fn benchmark_write_tpcds_tgroup_mt`**  
-  - **CLI**: `WriteMultiTableTGroup <num_rows>`  
   - **Signature**:  
     ```rust
     async fn benchmark_write_tpcds_tgroup_mt(
