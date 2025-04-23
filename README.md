@@ -156,6 +156,51 @@ For Delta-RS (non TGroups)
 cargo run --release --bin merge_write -- write-multi-table <num_rows>
 ```
 
+### 3.4 Multi-Table T-Group Write Example
+
+This example shows how to perform an atomic, multi-table write (T-Group) in Rust using `delta-rs-mt`.
+
+#### 3.4.1 Example Code
+1. **Open your table** (must have a checkpoint):
+   ```rust
+   let table = deltalake::open_table("s3://my-bucket/my_table").await?;
+   ```
+
+2. **Prepare an Arrow `RecordBatch` (matching your table schema).** 
+
+4. **Write in one step** (atomic, OCC-safe):
+   ```rust
+   use deltalake::DeltaOps;
+   DeltaOps(table).write(vec![batch]).await?;
+   ```
+
+#### 4.2 Multi-Table T-Group Write
+
+1. **Open each table** in your transaction group:
+   ```rust
+   let t1 = deltalake::open_table("s3://my-bucket/table1").await?;
+   let t2 = deltalake::open_table("s3://my-bucket/table2").await?;
+   ```
+
+2. **Issue pre-commits** (no log append yet):
+   ```rust
+   let p1 = DeltaOps(t1.clone()).write_tgroup(vec![batch1]).get_precommit().await?;
+   let p2 = DeltaOps(t2.clone()).write_tgroup(vec![batch2]).get_precommit().await?;
+   ```
+
+3. **(Optional) Tag & merge** each `PreCommit` with its `table_id`:
+   ```rust
+   let merged = combine_precommits_with_table_id(vec![p1, p2], vec![uuid1, uuid2])?;
+   ```
+
+4. **Final atomic multi-table commit:**
+   ```rust
+   let result = merged.await?;
+   ```
+
+> **Tip:**  
+> By batching multiple `PreCommit` objects—each tagged with its own `table_id`—you get a single JSON entry in `_delta_log/` that atomically updates all tables in the group, reusing Delta Lake’s OCC and atomic-append guarantees.
+
 
 ## Source Code Explanation
 
