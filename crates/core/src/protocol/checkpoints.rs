@@ -220,16 +220,6 @@ pub async fn create_checkpoint_for_tgroup_add(
         ));
     }
 
-    // Skipping this check since version will be tgroup version but state will be table state
-
-    // if version != state.version() {
-    //     error!(
-    //         "create_checkpoint_for called with version {version} but table state contains: {}. The table state may need to be reloaded",
-    //         state.version()
-    //     );
-    //     return Err(CheckpointError::StaleTableVersion(version, state.version()).into());
-    // }
-
     // TODO: checkpoints _can_ be multi-part... haven't actually found a good reference for
     // an appropriate split point yet though so only writing a single part currently.
     // See https://github.com/delta-io/delta-rs/issues/288
@@ -237,7 +227,6 @@ pub async fn create_checkpoint_for_tgroup_add(
     let last_checkpoint_path = tgroup_log_store
         .log_path()
         .child(format!("_last_checkpoint.{table_id}"));
-    let table_last_checkpoint_path = log_store.log_path().child(format!("_last_checkpoint"));
 
     debug!("Writing parquet bytes to checkpoint buffer.");
     let tombstones = state
@@ -251,7 +240,6 @@ pub async fn create_checkpoint_for_tgroup_add(
     let checkpoint_path = tgroup_log_store.log_path().child(file_name);
 
     let object_store = tgroup_log_store.object_store(operation_id);
-    let table_object_store = log_store.object_store(operation_id);
     debug!("Writing checkpoint to {checkpoint_path:?}.");
     object_store
         .put(&checkpoint_path, parquet_bytes.into())
@@ -272,13 +260,6 @@ pub async fn create_checkpoint_for_tgroup_add(
             last_checkpoint_content.clone().into(),
         )
         .await?;
-
-    // Write _last_checkpoint in the table's logs
-    debug!("Writing _last_checkpoint to {table_last_checkpoint_path:?}.");
-    table_object_store
-        .put(&table_last_checkpoint_path, last_checkpoint_content.into())
-        .await?;
-
     Ok(())
 }
 
