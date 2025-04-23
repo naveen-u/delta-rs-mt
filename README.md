@@ -155,15 +155,89 @@ For Delta-RS (non TGroups)
 ```bash
 cargo run --release --bin merge_write -- write-multi-table <num_rows>
 ```
+---
 
 ## Source Code Explanation
 
+### 1. T-Group Addition
 
-### 1. Multi-Table T-Group Write Example
+To enable grouping multiple Delta tables under a single transaction group (T-Group), we added a new protocol module and extended the high-level API.
+---
+
+#### 1. Protocol handlers
+
+**File:** `core/src/protocol/tgroup.rs`
+
+- \`\`
+
+  ```rust
+  pub async fn initiate_add_to_tgroup(
+      table: &DeltaTable,
+      tgroup_uri: &str,
+  ) -> Result<FinalizedCommit, DeltaTableError>
+  ```
+  Creates the initial *TGroupStart* commit record (read-only) by emitting an `Action::TGroup(ReadOnly)` to the table’s log.
+
+- \`\`
+
+  ```rust
+  pub async fn create_initial_tgroup_checkpoint(
+      table: &DeltaTable,
+      tgroup_uri: &str,
+  ) -> Result<(), DeltaTableError>
+  ```
+
+  Forces a checkpoint on the table (via `create_checkpoint_for_tgroup_add`) so that the T-Group has a stable snapshot to redirect to.
+
+- \`\`
+
+  ```rust
+  pub async fn finalize_add_to_tgroup(
+      table: &DeltaTable,
+      tgroup_uri: &str,
+      version: i64,
+  ) -> Result<FinalizedCommit, DeltaTableError>
+  ```
+
+  Emits the final *TGroupEnd* commit record by writing an `Action::TGroup(Redirect)` and sealing at the given version.
+
+---
+
+## 2. DeltaTable API extension
+
+**File:** `core/src/table/mod.rs`
+
+- **New method**:
+  ```rust
+  impl DeltaTable {
+      /// Adds this table to the T-Group at `tgroup_uri`
+      pub async fn add_to_tgroup(
+          &self,
+          tgroup_uri: &str
+      ) -> Result<(), DeltaTableError> { … }
+  }
+  ```
+  Inside `add_to_tgroup()`, we now sequentially:
+  1. Call `initiate_add_to_tgroup(self, tgroup_uri)`
+  2. Call `create_initial_tgroup_checkpoint(self, tgroup_uri)`
+  3. Call `finalize_add_to_tgroup(self, tgroup_uri, version)`
+  4. Update the table’s in-memory `tgroup_log_segment` state
+
+This change lets users simply invoke:
+
+```rust
+let table = DeltaTable::from_uri(...).await?;
+table.add_to_tgroup("memory://my-tgroup").await?;
+```
+
+Behind the scenes we handle all of the protocol actions and checkpointing required to join the table into the group.
+
+
+### 2. Multi-Table T-Group Write Example
 
 This example shows how to perform an atomic, multi-table write (T-Group) in Rust using `delta-rs-mt`.
 
-#### 1.1 Example Code
+#### 2.1 Example Code
 1. **Open your table** (must have a checkpoint):
    ```rust
    let table = deltalake::open_table("s3://my-bucket/my_table").await?;
@@ -177,7 +251,7 @@ This example shows how to perform an atomic, multi-table write (T-Group) in Rust
    DeltaOps(table).write(vec![batch]).await?;
    ```
 
-#### 1.2 Multi-Table T-Group Write
+#### 2.2 Multi-Table T-Group Write
 
 1. **Open each table** in your transaction group:
    ```rust
@@ -202,9 +276,9 @@ This example shows how to perform an atomic, multi-table write (T-Group) in Rust
    ```
 
 
-### 2. Benchmarks
+### 3. Benchmarks
 
-#### 2.1 Read‐Only Benchmark
+#### 3.1 Read‐Only Benchmark
 
 - **`async fn benchmark_read_tpcds`**  
   - **Signature**:  
@@ -219,7 +293,7 @@ This example shows how to perform an atomic, multi-table write (T-Group) in Rust
 
 ---
 
-#### 2.2 Write‐Only Benchmarks
+#### 3.2 Write‐Only Benchmarks
 
 - **`async fn benchmark_write_tpcds`**  
   - **Signature**:  
