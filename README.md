@@ -4,20 +4,25 @@
 ## Installation
 Follow these steps to build the project, and set it up to run test and benchmarks.
 
-### 1. Install Rust
+### 1. Clone this repo
+```sh
+git clone https://github.com/naveen-u/delta-rs-mt.git
+```
+
+### 2. Install Rust
 
 On Linux and macOS systems, this is done as follows:
 ```sh
 curl https://sh.rustup.rs -sSf | sh
 ```
 
-### 2. Install the `uv` Python package manager
+### 3. Install the `uv` Python package manager
 On Linux and macOS systems, this is done as follows:
 ```sh
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-### 3. Build the project
+### 4. Build the project
 Build the project. This will install deltalake into the Python virtual environment managed by uv.
 ```sh
 cd python
@@ -29,49 +34,111 @@ Follow these steps to generate TPC‑DS data, convert it into Delta tables, and 
 
 ### 1. Generate TPC‑DS Data
 
+#### 1.1 Clone the TPC-DS kit
 ```bash
-# 1.1 Clone the TPC‑DS kit
-cd Code_Delta/
 git clone https://github.com/databricks/tpcds-kit.git
-
-# 1.2 Build the dsdgen tool
-cd tpcds-kit/tools
-
-make
-
-# 1.3 Generate a scale‑10 dataset
-./dsdgen -scale 10 -FORCE -dir /home/divyams/Code_Delta/tpcds-data
-
 ```
- #### If you encounter compilation errors with gcc, switch your compiler to clang:
 
- ```bash
+#### 1.2 Install necessary development tools
+Ubuntu:
+```sh
+sudo apt-get install gcc make flex bison byacc git
+```
+CentOS/RHEL:
+```sh
+sudo yum install gcc make flex bison byacc git
+```
+macOS
+```sh
+xcode-select --install
+```
+
+#### 1.3 Build the dsdgen tool
+```sh
+cd tpcds-kit/tools
+make
+```
+
+#### 1.4 Generate a scale‑10 dataset
+```sh
+export TPCDS_DATA_PATH=/tmp/tpcds-data   # Set this path to wherever TPC-DS data is to be created
+mkdir -p $TPCDS_DATA_PATH
+./dsdgen -scale 10 -FORCE -dir $TPCDS_DATA_PATH
+```
+
+> [!TIP]
+> If you encounter compilation errors with `gcc`, switch your compiler to `clang` and retry.
+```sh
  export CC=clang
  export CXX=clang++
- ```
-
-## 2. Convert TPC‑DS Data to Delta Tables
-
-Make a new directory tpcds-delta for storing converted tables.
-
-```bash
-cargo run --release --bin merge_write -- convert ./tpcds-data/web_returns_edit.dat ./tpcds-delta/web_returns
 ```
 
+### 2. Convert TPC‑DS Data to Delta Tables
+Note that `delta-rs` (and hence, `delta-rs-mt`) contains schema only for the web returns dataset and hence, we test using that dataset. For testing with multiple tables, multiple copies of the table can be created by re-running these commands with a different table path.
+
+#### 2.1 Clean up TPC-DS data file
+The generated TPC-DS data has an extra `|` delimiter at the end of each line. This messes with the delta table generation script in `delta-rs`. Clean that up first using:
+```sh
+sed 's/|$//' $TPCDS_DATA_PATH/web_returns.dat > $TPCDS_DATA_PATH/web_returns_edit.dat
+```
+
+#### 2.2 Generate delta tables
+Generate the delta table from TPC-DS web returns data using the script provided by `delta-rs`. Run the following from the root of the `delta-rs` (or `delta-rs-mt`) repo.
+```sh
+cd crates/benchmarks/src/bin
+export TPCDS_TABLE_PATH=/tmp/tpcds-delta/web_returns    # Set this path to wherever the Delta table is to be created
+cargo run --release --bin merge_write -- convert $TPCDS_DATA_PATH/web_returns_edit.dat $TPCDS_TABLE_PATH
+```
+> [!TIP]
+> The web returns dataset with a scale factor of `10` contains `719217` rows. Depending on the memory of the system, the convert command above might get OOM killed. If so, either reduce the scale factor, or truncate the data file using:
+> ```sh
+> head -n 10000 $TPCDS_DATA_PATH/web_returns_edit.dat > $TPCDS_DATA_PATH/web_returns_trunc.dat    # Change 10000 to required number of rows
+> mv $TPCDS_DATA_PATH/web_returns_trunc.dat $TPCDS_DATA_PATH/web_returns_edit.dat
+> ```
+
+Note that the generated tables do not have checkpoints created by default and are not part of any T-Group. The `delta-rs-mt` benchmark script contains utility commands to do both of these operations when necessary. Refer [Section 3.1](#31-utility-methods) below for their usage.
+
 ## 3. Run Benchmarks
-### 3.1 Read Benchmark
+### 3.1 Utility methods
+The delta table's created in [Section 2.2](#22-generate-delta-tables) by default are not checkpointed and do not belong to any T-Group. The following utility methods are available to do these operations for generating tables suitable for testing.
+
+#### 3.1.1 Checkpointing
+> [!WARN]
+> Manually checkpointing tables that are a part of a T-Group is not (yet) supported!
+
+To manually checkpoint a delta table, run:
+```sh
+# Replace $TPCDS_TABLE_PATH with any delta table's path
+cargo run --release --bin merge_write -- checkpoint $TPCDS_TABLE_PATH
+```
+#### 3.1.2 Create T-Group
+To create a new T-Group, run:
+```sh
+# Replace $TGROUP_PATH with any path
+cargo run --release --bin merge_write -- create-tgroup $TGROUP_PATH
+```
+This step simply creates a new directory with a `_delta_log` folder and an empty inital log file signaling the initialization of the T-Group (which can be used for T-Group metadata in the future).
+
+#### 3.1.3 Add to T-Group
+To add a delta table to a T-Group, run:
+```sh
+# Replace $TPCDS_TABLE_PATH with any delta table's path and $TGROUP_PATH with any T-Group's path
+cargo run --release --bin merge_write -- add-to-tgroup $TPCDS_TABLE_PATH $TGROUP_PATH
+```
+
+### 3.2 Read Benchmarks
 
 ```bash
   cargo run --release --bin merge_write -- read-perf ./tpcds-delta/web_returns
 ```
 
-### 3.2 Write Benchmark
-#### 3.2.1 Single Table
+### 3.3 Write Benchmark
+#### 3.3.1 Single Table
 
 ```bash
 cargo run --release --bin merge_write -- write-perf ./tpcds-delta/merge_results_2 <num_rows>
 ```
-#### 3.2.2 Multi Table Write (2 Tables Parallel Txn)
+#### 3.3.2 Multi Table Write (2 Tables Parallel Txn)
 <mark> Note: Make sure correct tables path in merge_write under Command: WriteMultiTableTGroup</mark>
 
 For Delta-RS-MT (with TGroups)
