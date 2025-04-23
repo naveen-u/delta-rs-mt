@@ -163,7 +163,7 @@ cargo run --release --bin merge_write -- write-multi-table <num_rows>
 
 To enable grouping multiple Delta tables under a single transaction group (T-Group), we added a new protocol module and extended the high-level API.
 
-#### 1. Protocol handlers
+#### 1.1 Protocol handlers
 
 **File:** `core/src/protocol/tgroup.rs`
 
@@ -196,7 +196,7 @@ To enable grouping multiple Delta tables under a single transaction group (T-Gro
 
 ---
 
-## 2. DeltaTable API extension
+#### 1.2 DeltaTable API extension
 
 **File:** `core/src/table/mod.rs`
 
