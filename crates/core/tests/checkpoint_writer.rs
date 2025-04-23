@@ -462,6 +462,7 @@ mod checkpoints_with_tombstones {
                 deletion_vector: None,
                 base_row_id: None,
                 default_row_commit_version: None,
+                table_id: None,
             })
             .collect();
 
@@ -526,6 +527,7 @@ mod checkpoints_with_tombstones {
             deletion_vector: None,
             base_row_id: None,
             default_row_commit_version: None,
+            table_id: None,
         }
     }
 

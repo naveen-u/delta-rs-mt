@@ -58,6 +58,7 @@ async fn test_action_reconciliation() {
         deletion_vector: None,
         base_row_id: None,
         default_row_commit_version: None,
+        table_id: None,
     };
 
     assert_eq!(2, fs_common::commit_removes(&mut table, vec![&r]).await);
