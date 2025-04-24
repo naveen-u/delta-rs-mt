@@ -194,7 +194,6 @@ To enable grouping multiple Delta tables under a single transaction group (T-Gro
 
   Emits the final *TGroupEnd* commit record by writing an `Action::TGroup(Redirect)` and sealing at the given version.
 
----
 
 #### 1.2 DeltaTable API extension
 
@@ -225,6 +224,7 @@ table.add_to_tgroup("memory://my-tgroup").await?;
 
 Behind the scenes we handle all of the protocol actions and checkpointing required to join the table into the group.
 
+---
 
 ### 2. Multi-Table T-Group Write Example
 
@@ -268,6 +268,7 @@ This example shows how to perform an atomic, multi-table write (T-Group) in Rust
    let result = merged.await?;
    ```
 
+---
 
 ### 3. Benchmarks
 
@@ -283,8 +284,6 @@ This example shows how to perform an atomic, multi-table write (T-Group) in Rust
   - **Location**: `crates/benchmarks/src/bin/merge_write.rs`, lines **393–450**
 
    This loads the Delta table, runs SELECT * FROM t1, collects all batches, sums row counts, and times the full scan+ deserialize pipeline.
-
----
 
 #### 3.2 Write‐Only Benchmarks
 
@@ -335,3 +334,5 @@ This example shows how to perform an atomic, multi-table write (T-Group) in Rust
   - **Location**: `crates/benchmarks/src/bin/merge_write.rs`, lines **743–821**
 
   This function groups multiple tables into the same T-Group. Each thread issues a write(..).get_precommit().await, so we isolate the cost of coordinating a multi-table commit.
+
+---
