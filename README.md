@@ -227,7 +227,7 @@ Behind the scenes we handle all of the protocol actions and checkpointing requir
 
 ---
 
-### 2. Multi-Table T-Group Write Example
+### 2. Write Protocol
 
 #### Writer Builder Extension
 **File:** `crates/core/src/operations/write/mod.rs`
