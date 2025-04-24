@@ -241,6 +241,7 @@ pub async fn get_precommit(self) -> DeltaResult<PreCommit<'static>>
 ```
 Method that exposes a pre-commit object publicly for T-Group commits.
 
+#### T-Group Commit
 **File:** `crates/core/src/protocol/tgroup.rs`
 ```rust
 pub async fn commit_tgroup_transaction<'a>(
