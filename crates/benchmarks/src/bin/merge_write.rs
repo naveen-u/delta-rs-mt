@@ -472,34 +472,6 @@ fn dummy_array_for_field(
             let values = vec![String::new(); num_rows];
             Ok(Arc::new(StringArray::from(values)))
         }
-        // DataType::Decimal128(7, 2) => {
-        //     // For Decimal128, we assume a precision of 7 and scale of 2.
-        //     // let mut builder = Decimal128Builder::new(num_rows, 7, 2);
-        //     // for _ in 0..num_rows {
-        //     //     builder.append_value(0)?;
-        //     // }
-        //     let mut builder = Decimal128Builder::new();
-        //     for _ in 0..num_rows {
-        //         builder.append_value(0);
-        //     }
-        //     Ok(Arc::new(builder.finish()))
-        // }
-        // DataType::Decimal128(precision, scale) => {
-        //     // Create a vector of 0i128 values for each row.
-        //     let values = vec![0i128; num_rows];
-        //     // Build the array using the expected precision and scale.
-        //     Ok(Arc::new(Decimal128Array::new(values)))
-        // }
-        // DataType::Decimal128(7, 2) => {
-        //     // Create a Decimal128Builder
-        //     let mut builder = Decimal128Builder::new();
-        //     // Append values to the builder
-        //     for _ in 0..num_rows {
-        //         builder.append_value(0);
-        //     }
-        //     // Finish the builder to create the Decimal128Array
-        //     Ok(Arc::new(builder.finish()))
-        // }
         DataType::Decimal128(precision, scale) => {
             let values = 1..=num_rows as i128; // inclusive range 1..=num_rows
             let array = Decimal128Array::from_iter_values(values)
@@ -548,78 +520,11 @@ async fn benchmark_write_tpcds(
 
     let start = Instant::now();
     // Write the batch using WriteFlow (WriteBuilder).
-    DeltaOps::try_from_uri(path.clone())
+    DeltaOps::try_from_valid_uri(path.clone())
         .await?
         .write(vec![batch])
         .with_save_mode(SaveMode::Append)
         .await?;
-    let end = Instant::now();
-    let duration = end.duration_since(start);
-
-    let metrics = WriteMetrics {
-        row_count: num_rows,
-    };
-
-    // Log the write benchmark.
-    let log_schema = Arc::new(ArrowSchema::new(vec![
-        Field::new("group_id", DataType::Utf8, false),
-        Field::new("name", DataType::Utf8, false),
-        Field::new("sample", DataType::UInt32, false),
-        Field::new("duration_ms", DataType::UInt32, false),
-        Field::new("data", DataType::Utf8, true),
-    ]));
-
-    let group_id = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_millis()
-        .to_string();
-
-    let log_batch = RecordBatch::try_new(
-        log_schema,
-        vec![
-            Arc::new(StringArray::from(vec![group_id])),
-            Arc::new(StringArray::from(vec!["write-log".to_string()])),
-            Arc::new(UInt32Array::from(vec![0])),
-            Arc::new(UInt32Array::from(vec![duration.as_millis() as u32])),
-            Arc::new(StringArray::from(vec![json!(metrics).to_string()])),
-        ],
-    )?;
-
-    DeltaOps::try_from_uri("data/benchmarks")
-        .await?
-        .write(vec![log_batch])
-        .with_save_mode(SaveMode::Append)
-        .await?;
-
-    Ok((duration, metrics))
-}
-
-async fn benchmark_write_tpcds_tgroup(
-    path: String,
-    num_rows: usize,
-) -> Result<(core::time::Duration, WriteMetrics), DataFusionError> {
-    // Load the existing Delta table to obtain the schema.
-    let table = DeltaTableBuilder::from_uri(path.clone()).load().await?;
-    // let table_schema = table.schema(); // This is an ArrowSchema
-    let table_schema = match table.schema() {
-        Some(schema) => Arc::new(ArrowSchema::try_from(schema).unwrap()),
-        None => return Err(DataFusionError::Internal("Table has no schema".to_string())),
-    };
-
-    // Create a dummy record batch matching the table schema.
-    let batch = create_dummy_record_batch(table_schema, num_rows)
-        .map_err(|e| DataFusionError::Internal(e.to_string()))?;
-
-    let start = Instant::now();
-    // Write the batch using WriteFlow (WriteBuilder).
-    let precommit = DeltaOps::try_from_valid_uri(path.clone())
-        .await?
-        .write(vec![batch])
-        .with_save_mode(SaveMode::Append)
-        .get_precommit()
-        .await?;
-    precommit.await?;
     let end = Instant::now();
     let duration = end.duration_since(start);
 
@@ -757,9 +662,6 @@ async fn benchmark_write_tpcds_tgroup_mt(
             .map_err(|e| DataFusionError::Internal(e.to_string()))?;
         batches.push(batch);
     }
-    // Load the existing Delta table to obtain the schema.
-    // let table = DeltaTableBuilder::from_uri(path.clone()).load().await?;
-    // let table_schema = table.schema(); // This is an ArrowSchema
     let mut handles: Vec<thread::JoinHandle<()>> = vec![];
 
     let start = Instant::now();
@@ -832,7 +734,6 @@ enum Command {
     DeletePerf(DeletePerf),
     ReadPerf(ReadPerf),
     WritePerf(WritePerf),
-    WriteTGroup(WritePerf),
     WriteMultiTable(WriteMultiTable),
     WriteMultiTableTGroup(WriteMultiTable),
     AddToTgroup(AddTGroup),
@@ -1278,10 +1179,6 @@ async fn main() {
         }
         Command::WritePerf(WritePerf { path, num_rows }) => {
             let (duration, metrics) = benchmark_write_tpcds(path, num_rows).await.unwrap();
-            println!("Write Metrics: {:?}\nTime: {:.2?}", metrics, duration);
-        }
-        Command::WriteTGroup(WritePerf { path, num_rows }) => {
-            let (duration, metrics) = benchmark_write_tpcds_tgroup(path, num_rows).await.unwrap();
             println!("Write Metrics: {:?}\nTime: {:.2?}", metrics, duration);
         }
         Command::WriteMultiTableTGroup(WriteMultiTable { num_rows }) => {
