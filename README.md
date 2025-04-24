@@ -227,7 +227,61 @@ Behind the scenes we handle all of the protocol actions and checkpointing requir
 
 ---
 
-### 2. Write Protocol
+
+### 2. Read Protocol
+
+#### DeltaTableBuilder Extension
+**File:** `crates/core/src/table/builder.rs`
+```rust
+pub async fn load(&mut self) -> DeltaResult<DeltaTable>
+```
+This method loads the Delta table while adding support for T-Groups. It checks the latest commit for a tgroupUri and, if present, redirects the log store to the shared T-Group path. It also extracts the table ID from the oldest commit to assist in snapshot initialization.
+
+#### LogSegment Extension
+**File:** `crates/core/src/kernel/snapshot/log_segment.rs`
+```rust
+pub async fn try_new_with_tgroup(
+    table_root: &Path,
+    version: Option<i64>,
+    store: &dyn ObjectStore,
+    metadata_id: Option<String>,
+) -> DeltaResult<LogSegment>
+```
+This method constructs a LogSegment for tables in a T-Group by reading a metadata-specific _last_checkpoint.<id> file and filtering commit and checkpoint files that match the metadata_id. This enables versioned snapshot loading in shared transaction logs.
+
+```rust
+async fn read_last_checkpoint_with_tgroup(
+    fs_client: &dyn ObjectStore,
+    log_root: &Path,
+    metadata_id: Option<String>,
+) -> DeltaResult<Option<CheckpointMetadata>>
+```
+Reads a metadata-scoped checkpoint file in a T-Group, using the format _last_checkpoint.<metadata_id>. This supports checkpoint isolation when multiple tables share a common _delta_log directory.
+
+```rust
+async fn list_log_files_with_checkpoint_tgroup(
+    cp: &CheckpointMetadata,
+    fs_client: &dyn ObjectStore,
+    log_root: &Path,
+    metadata_id: Option<String>,
+) -> DeltaResult<(Vec<ObjectMeta>, Vec<ObjectMeta>, Option<String>)>
+```
+Lists log files for a T-Group table starting from a metadata-scoped checkpoint version. Only includes commits that match the metadata_id, ensuring logs are filtered to a single table’s commit stream within a shared log directory.
+
+```rust
+pub(super) fn commit_stream_with_tableid(
+    &self,
+    store: Arc<dyn ObjectStore>,
+    read_schema: &Schema,
+    config: &DeltaTableConfig,
+    table_id: Option<String>,
+) -> DeltaResult<BoxStream<'_, DeltaResult<RecordBatch>>>
+```
+Streams decoded commit records while filtering add actions by tableId to ensure only records associated with a specific table are processed. This guarantees snapshot isolation in multi-table T-Group logs.
+
+---
+
+### 3. Write Protocol
 
 #### Writer Builder Extension
 **File:** `crates/core/src/operations/write/mod.rs`
@@ -252,9 +306,9 @@ Takes a vector of pre-commits objects and performs a single atomic commit with t
 
 ---
 
-### 3. Benchmarks
+### 4. Benchmarks
 
-#### 3.1 Read‐Only Benchmark
+#### 4.1 Read‐Only Benchmark
 
 - **`async fn benchmark_read_tpcds`**  
   - **Signature**:  
@@ -267,7 +321,7 @@ Takes a vector of pre-commits objects and performs a single atomic commit with t
 
    This loads the Delta table, runs SELECT * FROM t1, collects all batches, sums row counts, and times the full scan+ deserialize pipeline.
 
-#### 3.2 Write‐Only Benchmarks
+#### 4.2 Write‐Only Benchmarks
 
 - **`async fn benchmark_write_tpcds`**  
   - **Signature**:  
