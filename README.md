@@ -103,7 +103,7 @@ Note that the generated tables do not have checkpoints created by default and ar
 The delta table's created in [Section 2.2](#22-generate-delta-tables) by default are not checkpointed and do not belong to any T-Group. The following utility methods are available to do these operations for generating tables suitable for testing.
 
 #### 3.1.1 Checkpointing
-> [!WARN]
+> [!WARNING]
 > Manually checkpointing tables that are a part of a T-Group is not (yet) supported!
 
 To manually checkpoint a delta table, run:
@@ -229,45 +229,25 @@ Behind the scenes we handle all of the protocol actions and checkpointing requir
 
 ### 2. Multi-Table T-Group Write Example
 
-This example shows how to perform an atomic, multi-table write (T-Group) in Rust using `delta-rs-mt`.
+#### Writer Builder Extension
+**File:** `crates/core/src/operations/write/mod.rs`
+```rust
+async fn prepare_precommit(mut self) -> DeltaResult<PreCommit<'static>>
+```
+This method prepare's a pre-commit object (without actually finalizing the commit) enabling T-Group writes to return and merge these objects before doing a single combined commit. It also includes the table's unique ID in the pre-commit object.
 
-#### 2.1 Example Code
-1. **Open your table** (must have a checkpoint):
-   ```rust
-   let table = deltalake::open_table("s3://my-bucket/my_table").await?;
-   ```
+```rust
+pub async fn get_precommit(self) -> DeltaResult<PreCommit<'static>>
+```
+Method that exposes a pre-commit object publicly for T-Group commits.
 
-2. **Prepare an Arrow `RecordBatch` (matching your table schema).** 
-
-4. **Write in one step** (atomic, OCC-safe):
-   ```rust
-   use deltalake::DeltaOps;
-   DeltaOps(table).write(vec![batch]).await?;
-   ```
-
-#### 2.2 Multi-Table T-Group Write
-
-1. **Open each table** in your transaction group:
-   ```rust
-   let t1 = deltalake::open_table("s3://my-bucket/table1").await?;
-   let t2 = deltalake::open_table("s3://my-bucket/table2").await?;
-   ```
-
-2. **Issue pre-commits** (no log append yet):
-   ```rust
-   let p1 = DeltaOps(t1.clone()).write_tgroup(vec![batch1]).get_precommit().await?;
-   let p2 = DeltaOps(t2.clone()).write_tgroup(vec![batch2]).get_precommit().await?;
-   ```
-
-3. **(Optional) Tag & merge** each `PreCommit` with its `table_id`:
-   ```rust
-   let merged = combine_precommits_with_table_id(vec![p1, p2], vec![uuid1, uuid2])?;
-   ```
-
-4. **Final atomic multi-table commit:**
-   ```rust
-   let result = merged.await?;
-   ```
+**File:** `crates/core/src/protocol/tgroup.rs`
+```rust
+pub async fn commit_tgroup_transaction<'a>(
+    precommits: Vec<PreCommit<'a>>,
+) -> Result<FinalizedCommit, DeltaTableError>
+```
+Takes a vector of pre-commits objects and performs a single atomic commit with the combined information.
 
 ---
 
