@@ -137,7 +137,8 @@ cargo run --release --bin merge_write -- read-perf $TPCDS_TABLE_PATH
 #### 3.3.1 Single Table
 
 ```bash
-cargo run --release --bin merge_write -- write-perf ./tpcds-delta/merge_results_2 <num_rows>
+# Replace $TPCDS_TABLE_PATH with any delta table's path and $ROW_COUNT with any positive integer
+cargo run --release --bin merge_write -- write-perf $TPCDS_TABLE_PATH $ROW_COUNT
 ```
 #### 3.3.2 Multi Table Write (2 Tables Parallel Txn)
 <mark> Note: Make sure correct tables path in merge_write under Command: WriteMultiTableTGroup</mark>
